@@ -1,0 +1,16 @@
+doctype html
+html
+  head
+    meta(charset="UTF-8")
+    title Order Confirmation - GameShop
+    style.
+      body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
+      .container { background: #fff; padding: 20px; border-radius: 5px; text-align: center; }
+  body
+    .container
+      h1 Order Confirmation
+      p Hi #{firstName}, your order has been placed successfully!
+      p Order ID: #{order._id}
+      p Total: $#{order.totalPrice}
+      p We'll notify you when your order is shipped.
+      a(href=url style="display:inline-block; padding:10px 20px; background:#007bff; color:#fff; text-decoration:none; border-radius:5px;") Track Your Order

@@ -1,0 +1,62 @@
+/server
+│
+├── /config
+│   ├── db.js               # Database connection setup
+│   ├── config.env          # Environment variables
+│   └── rateLimit.js        # Rate limiting configurations
+│
+├── /controllers
+│   ├── authController.js   # Authentication logic
+│   ├── cartController.js   # Cart operations
+│   ├── orderController.js  # Order processing
+│   ├── paymentController.js # Payment handling
+│   ├── productController.js # Product management
+│   ├── userController.js   # User management
+│   └── adminController.js  # Admin-specific operations
+│
+├── /middleware
+│   ├── authMiddleware.js   # Authentication checks
+│   ├── adminMiddleware.js  # Admin role verification
+│   ├── errorMiddleware.js  # Error handling
+│   └── logger.js          # Custom logging system
+│
+├── /models
+│   ├── Product.js         # Product schema
+│   ├── User.js           # User schema
+│   ├── Cart.js           # Cart schema
+│   ├── Order.js          # Order schema
+│   └── Review.js         # Review schema
+│
+├── /routes
+│   ├── authRoutes.js      # Authentication endpoints
+│   ├── productRoutes.js   # Product API routes
+│   ├── userRoutes.js      # User API routes
+│   ├── adminRoutes.js     # Admin API routes
+│   ├── cartRoutes.js      # Cart API routes
+│   ├── orderRoutes.js     # Order API routes
+│   └── paymentRoutes.js   # Payment API routes
+│
+├── /utils
+│   ├── apiFeatures.js     # Advanced query features
+│   ├── email.js          # Email service
+│   ├── generateToken.js  # JWT handling
+│   └── appError.js       # Custom error class
+│
+├── /public
+│   └── /uploads          # Product images storage
+│       ├── /products     # Product images
+│       └── /avatars      # User avatars
+│
+├── /logs                 # Application logs
+│   ├── access.log        # Request logs
+│   ├── error.log         # Error logs
+│   └── combined.log      # All logs
+│
+├── /validators          # Request validation
+│   ├── productValidator.js
+│   └── userValidator.js
+│
+├── .env                 # Local environment variables
+├── .gitignore
+├── package.json
+└── server.js           # Main application entry point
