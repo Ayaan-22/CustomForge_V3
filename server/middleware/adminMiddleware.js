@@ -1,3 +1,4 @@
+// File: server/middleware/adminMiddleware.js
 import asyncHandler from 'express-async-handler';
 import User from '../models/User.js';
 import { logger } from './logger.js';

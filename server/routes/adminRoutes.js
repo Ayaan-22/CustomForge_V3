@@ -1,3 +1,4 @@
+// File: server/routes/adminRoutes.js
 import express from 'express';
 import {
   getSalesAnalytics,

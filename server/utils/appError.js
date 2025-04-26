@@ -1,3 +1,4 @@
+// File: server/utils/appError.js
 export default class AppError extends Error {
   constructor(message, statusCode, details = null, isOperational = true) {
     super(message);

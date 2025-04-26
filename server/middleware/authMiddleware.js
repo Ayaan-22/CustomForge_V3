@@ -1,3 +1,5 @@
+// File: server/middleware/authMiddleware.js
+import { verifyTwoFactorToken } from '../utils/twoFactorAuth.js';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import asyncHandler from 'express-async-handler';

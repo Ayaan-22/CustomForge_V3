@@ -1,3 +1,4 @@
+// File: server/middleware/errorMiddleware.js
 import { logger } from './logger.js';
 
 class AppError extends Error {

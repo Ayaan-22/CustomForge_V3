@@ -1,3 +1,4 @@
+// File: server/models/Product.js
 import mongoose from 'mongoose';
 
 /**

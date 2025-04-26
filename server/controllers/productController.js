@@ -1,3 +1,4 @@
+// File: server/controllers/productController.js
 import Product from '../models/Product.js';
 import APIFeatures from '../utils/apiFeatures.js';
 import AppError from '../utils/appError.js';

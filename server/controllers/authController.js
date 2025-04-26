@@ -1,3 +1,4 @@
+// File: server/controllers/authController.js
 import crypto from 'crypto';
 import User from '../models/User.js';
 import { signToken } from '../utils/generateToken.js';

@@ -1,3 +1,4 @@
+// File: server/controllers/couponController.js
 import Coupon from '../models/Coupon.js';
 import asyncHandler from 'express-async-handler';
 import AppError from '../utils/appError.js';

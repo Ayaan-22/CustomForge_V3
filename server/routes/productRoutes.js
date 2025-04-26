@@ -1,4 +1,4 @@
-// productRoutes.js
+// File: server/routes/productRoutes.js
 import express from 'express';
 import {
   // Public endpoints

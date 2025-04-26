@@ -1,3 +1,4 @@
+// File: server/controllers/adminController.js
 import User from '../models/User.js';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';

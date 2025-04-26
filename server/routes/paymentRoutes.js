@@ -1,3 +1,4 @@
+// File: server/routes/paymentRoutes.js
 import express from 'express';
 import {
   createPaymentIntent,

@@ -1,3 +1,4 @@
+// File: server/models/Game.js
 import mongoose from 'mongoose';
 
 /**

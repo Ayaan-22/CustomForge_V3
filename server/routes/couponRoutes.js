@@ -1,3 +1,4 @@
+// File: server/routes/couponRoutes.js
 import express from 'express';
 import {
   createCoupon,

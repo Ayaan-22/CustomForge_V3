@@ -1,3 +1,4 @@
+// File: server/utils/generateToken.js
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import AppError from './appError.js';

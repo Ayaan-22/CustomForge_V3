@@ -1,3 +1,4 @@
+// File: server/routes/emailTestRoutes.js
 import express from 'express';
 import Email from '../utils/email.js'; // Ensure correct path
 import asyncHandler from 'express-async-handler';

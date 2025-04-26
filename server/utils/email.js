@@ -1,3 +1,4 @@
+// File: server/utils/email.js
 import nodemailer from 'nodemailer';
 import pug from 'pug';
 import { htmlToText } from 'html-to-text';
@@ -58,7 +59,7 @@ export default class Email {
 
       // Create transport and send email
       const transport = this.newTransport();
-      await transport.sendMail(mailOptions);
+      transport.sendMail(mailOptions);
     } catch (err) {
       console.error(`Failed to send email: ${err.message}`);
       throw new AppError('Failed to send email', 500, {

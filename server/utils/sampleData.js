@@ -1,3 +1,4 @@
+// File: server/utils/sampleData.js
 // ✅ Sample product data for seeding the database
 const sampleProducts = [
   {

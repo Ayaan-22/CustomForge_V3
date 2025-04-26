@@ -1,3 +1,5 @@
+// File: server/controllers/userController.js
+import Order from '../models/Order.js';
 import User from '../models/User.js';
 import AppError from '../utils/appError.js';
 import asyncHandler from 'express-async-handler';
