@@ -1,3 +1,4 @@
+//File: Client/my-app/src/Components/ProductDes.tsx
 "use client";
 
 import type React from "react";

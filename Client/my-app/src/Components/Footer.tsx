@@ -1,3 +1,4 @@
+//File: Client/my-app/src/Components/Footer.tsx
 "use client";
 
 import type React from "react";

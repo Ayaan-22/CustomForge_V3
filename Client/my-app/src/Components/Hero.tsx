@@ -1,3 +1,4 @@
+//File: Client/my-app/src/Components/Hero.tsx
 "use client";
 
 import type React from "react";
@@ -10,7 +11,7 @@ const pcProducts = [
     id: 1,
     title: "Phantom Gaming PC",
     description: "Ultimate gaming experience with RTX 4080 & Intel i9",
-    image: "/placeholder.svg?height=600&width=800",
+    image: "/assets/PhantomGamingPC.jpg?height=600&width=800",
     bgColor: "from-blue-600 to-indigo-900",
     buttonText: "Shop Now",
     buttonLink: "#",
@@ -21,7 +22,7 @@ const pcProducts = [
     id: 2,
     title: "Aurora RGB Beast",
     description: "Stunning RGB lighting with AMD Ryzen 9 & 32GB RAM",
-    image: "/placeholder.svg?height=600&width=800",
+    image: "/assets/Aurora-Black-RGB.jpg?height=600&width=800",
     bgColor: "from-purple-600 to-indigo-800",
     buttonText: "View Details",
     buttonLink: "#",
@@ -31,7 +32,7 @@ const pcProducts = [
     id: 3,
     title: "Stealth Mini ITX",
     description: "Compact powerhouse for your gaming setup",
-    image: "/placeholder.svg?height=600&width=800",
+    image: "/assets/stealth-mini-itx.jpg?height=600&width=800",
     bgColor: "from-gray-800 to-gray-900",
     buttonText: "Pre-Order",
     buttonLink: "#",
@@ -196,7 +197,7 @@ const HeroSection: React.FC = () => {
                   <img
                     src={product.image || "/placeholder.svg"}
                     alt={product.title}
-                    className="max-w-full h-auto object-cover rounded-lg shadow-2xl transform transition-transform duration-300 hover:scale-105"
+                    className="w-150 h-80 object-cover rounded-lg shadow-2xl transform transition-transform duration-300 hover:scale-105"
                   />
                 </div>
               </div>
