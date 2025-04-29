@@ -4,13 +4,52 @@ html
     meta(charset="UTF-8")
     title Order Confirmation - GameShop
     style.
-      body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
-      .container { background: #fff; padding: 20px; border-radius: 5px; text-align: center; }
+      body {
+        font-family: 'Arial', sans-serif;
+        background-color: #f2f2f2;
+        margin: 0;
+        padding: 30px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+      }
+      .container {
+        background: #ffffff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        text-align: center;
+        max-width: 500px;
+        width: 100%;
+      }
+      h1 {
+        color: #333;
+        margin-bottom: 20px;
+      }
+      p {
+        color: #555;
+        font-size: 16px;
+        margin-bottom: 15px;
+      }
+      a.button {
+        display: inline-block;
+        background-color: #007bff;
+        color: #fff;
+        padding: 12px 25px;
+        border-radius: 5px;
+        text-decoration: none;
+        font-weight: bold;
+        transition: background-color 0.3s;
+      }
+      a.button:hover {
+        background-color: #0056b3;
+      }
   body
     .container
       h1 Order Confirmation
       p Hi #{firstName}, your order has been placed successfully!
       p Order ID: #{order._id}
       p Total: $#{order.totalPrice}
-      p We'll notify you when your order is shipped.
-      a(href=url style="display:inline-block; padding:10px 20px; background:#007bff; color:#fff; text-decoration:none; border-radius:5px;") Track Your Order
+      p We'll notify you once it's shipped!
+      a.button(href=url) Track Your Order
