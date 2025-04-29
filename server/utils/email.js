@@ -1,10 +1,10 @@
 // File: server/utils/email.js
-import nodemailer from 'nodemailer';
-import pug from 'pug';
-import { htmlToText } from 'html-to-text';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import AppError from './appError.js';
+import nodemailer from "nodemailer";
+import pug from "pug";
+import { htmlToText } from "html-to-text";
+import path from "path";
+import { fileURLToPath } from "url";
+import AppError from "./appError.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 export default class Email {
   constructor(user, url, data = {}) {
     this.to = user.email;
-    this.firstName = user.name?.split(' ')[0] || 'User';
+    this.firstName = user.name?.split(" ")[0] || "User";
     this.url = url;
     this.from = `Ayaan from GameShop <${process.env.EMAIL_USERNAME}>`;
     this.data = data;
@@ -20,28 +20,31 @@ export default class Email {
 
   newTransport() {
     return nodemailer.createTransport({
-      service: 'gmail',
+      service: "gmail",
       auth: {
         user: process.env.EMAIL_USERNAME, // Your Gmail address
-        pass: process.env.EMAIL_PASSWORD  // Your App Password (not Gmail password)
+        pass: process.env.EMAIL_PASSWORD, // Your App Password (not Gmail password)
       },
       secure: false,
       tls: {
-        rejectUnauthorized: false
-      }
+        rejectUnauthorized: false,
+      },
     });
   }
 
   async send(template, subject) {
     try {
-      const templatePath = path.join(__dirname, `../views/email/${template}.pug`);
-      
+      const templatePath = path.join(
+        __dirname,
+        `../views/email/${template}.pug`
+      );
+
       // Render HTML based on pug template
       const html = pug.renderFile(templatePath, {
         firstName: this.firstName,
         url: this.url,
         subject,
-        ...this.data
+        ...this.data,
       });
 
       // Define email options
@@ -52,9 +55,9 @@ export default class Email {
         html,
         text: htmlToText(html, {
           wordwrap: 130,
-          ignoreImage: true
+          ignoreImage: true,
         }),
-        priority: 'high'
+        priority: "high",
       };
 
       // Create transport and send email
@@ -62,36 +65,37 @@ export default class Email {
       transport.sendMail(mailOptions);
     } catch (err) {
       console.error(`Failed to send email: ${err.message}`);
-      throw new AppError('Failed to send email', 500, {
+      throw new AppError("Failed to send email", 500, {
         template,
-        recipient: this.to
+        recipient: this.to,
       });
     }
   }
 
   async sendWelcome() {
-    await this.send('welcome', 'Welcome to the GameShop Family!');
+    await this.send("welcome", "Welcome to the GameShop Family!");
   }
 
   async sendPasswordReset() {
     await this.send(
-      'passwordReset',
-      'Your password reset token (valid for only 10 minutes)'
+      "passwordReset",
+      "Your password reset token (valid for only 10 minutes)"
     );
   }
 
   async sendOrderConfirmation(order) {
-    await this.send(
-      'orderConfirmation',
-      `Your GameShop Order #${order._id}`,
-      { order }
-    );
+    await this.send("orderConfirmation", `Your GameShop Order #${order._id}`, {
+      order,
+    });
   }
 
   async sendVerificationEmail() {
-    await this.send(
-      'emailVerification',
-      'Verify your GameShop account email'
-    );
+    await this.send("emailVerification", "Verify your GameShop account email");
+  }
+
+  async send2FA() {
+    await this.send("2fa", "Your 2FA code for GameShop", {
+      code: this.data.code,
+    });
   }
 }

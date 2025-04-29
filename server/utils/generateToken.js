@@ -1,75 +1,130 @@
 // File: server/utils/generateToken.js
-import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
-import AppError from './appError.js';
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
+import speakeasy from "speakeasy";
+import dotenv from "dotenv";
+import AppError from "./appError.js";
 
-// Token generation configuration
-const TOKEN_CONFIG = {
-  JWT: {
-    DEFAULT_EXPIRES: '30d',
-    SHORT_EXPIRES: '15m'
-  },
-  VERIFY_EMAIL: {
-    EXPIRES: 24 * 60 * 60 * 1000 // 24 hours
-  },
-  PASSWORD_RESET: {
-    EXPIRES: 10 * 60 * 1000 // 10 minutes
-  }
+dotenv.config();
+
+// Validate environment variables
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is not defined in environment variables");
+}
+
+// Configuration constants
+const JWT_CONFIG = {
+  algorithm: process.env.JWT_ALGORITHM || "HS256",
+  expiresIn: process.env.JWT_EXPIRES_IN || "30d",
+  shortExpires: process.env.JWT_SHORT_EXPIRES_IN || "15m",
+  refreshExpires:
+    process.env.JWT_REFRESH_EXPIRES_IN || process.env.JWT_EXPIRES_IN || "30d",
 };
 
-export const signToken = (userId, role, expiresIn = null) => {
-  if (!process.env.JWT_SECRET) {
-    throw new AppError.internal('JWT secret is not configured');
-  }
-
-  return jwt.sign(
-    { userId, role },
-    process.env.JWT_SECRET,
-    { 
-      expiresIn: expiresIn || process.env.JWT_EXPIRES_IN || TOKEN_CONFIG.JWT.DEFAULT_EXPIRES,
-      algorithm: 'HS256'
-    }
-  );
+const TOKEN_EXPIRY = {
+  EMAIL_VERIFICATION: 24 * 60 * 60 * 1000, // 24 hours
+  PASSWORD_RESET: 10 * 60 * 1000, // 10 minutes
 };
 
-export const verifyToken = (token, secret = process.env.JWT_SECRET) => {
+// Core JWT Functions
+export const signToken = (userId, role = "user", expiresIn = null) => {
   try {
-    return jwt.verify(token, secret, { algorithms: ['HS256'] });
+    return jwt.sign({ userId, role }, process.env.JWT_SECRET, {
+      algorithm: JWT_CONFIG.algorithm,
+      expiresIn: expiresIn || JWT_CONFIG.expiresIn,
+    });
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      throw new AppError('Token has expired', 401, { expiredAt: err.expiredAt });
-    }
-    throw new AppError('Invalid token', 401);
+    throw AppError.internal("Failed to sign JWT", {
+      originalError: err.message,
+    });
   }
 };
 
-export const createVerifyEmailToken = () => {
-  const verifyToken = crypto.randomBytes(32).toString('hex');
-  const verifyEmailToken = crypto
-    .createHash('sha256')
-    .update(verifyToken)
-    .digest('hex');
-
-  const verifyEmailExpires = Date.now() + TOKEN_CONFIG.VERIFY_EMAIL.EXPIRES;
-
-  return { verifyToken, verifyEmailToken, verifyEmailExpires };
+export const verifyJWT = (token) => {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: [JWT_CONFIG.algorithm],
+    });
+  } catch (err) {
+    if (err.name === "TokenExpiredError") {
+      throw AppError.unauthorized("Token has expired", {
+        expiredAt: err.expiredAt,
+      });
+    }
+    throw AppError.unauthorized("Invalid token", { reason: err.message });
+  }
 };
 
-export const createPasswordResetToken = () => {
-  const resetToken = crypto.randomBytes(32).toString('hex');
-  const passwordResetToken = crypto
-    .createHash('sha256')
-    .update(resetToken)
-    .digest('hex');
-
-  const passwordResetExpires = Date.now() + TOKEN_CONFIG.PASSWORD_RESET.EXPIRES;
-
-  return { resetToken, passwordResetToken, passwordResetExpires };
+// Email Verification Token
+export const generateEmailVerificationToken = () => {
+  const token = crypto.randomBytes(32).toString("hex");
+  return {
+    token,
+    hashedToken: crypto.createHash("sha256").update(token).digest("hex"),
+    expires: Date.now() + TOKEN_EXPIRY.EMAIL_VERIFICATION,
+  };
 };
 
-export const createAccessRefreshTokens = (userId, role) => {
-  const accessToken = signToken(userId, role, TOKEN_CONFIG.JWT.SHORT_EXPIRES);
-  const refreshToken = signToken(userId, role, TOKEN_CONFIG.JWT.DEFAULT_EXPIRES);
-  
-  return { accessToken, refreshToken };
+// Password Reset Token
+export const generatePasswordResetToken = () => {
+  const token = crypto.randomBytes(32).toString("hex");
+  return {
+    token,
+    hashedToken: crypto.createHash("sha256").update(token).digest("hex"),
+    expires: Date.now() + TOKEN_EXPIRY.PASSWORD_RESET,
+  };
+};
+
+// Two-Factor Authentication
+export const generate2FASecret = (email) => {
+  return speakeasy.generateSecret({
+    name: `GameStore (${email})`,
+    length: 20,
+  });
+};
+
+export const verify2FAToken = (secret, token) => {
+  return speakeasy.totp.verify({
+    secret,
+    encoding: "base32",
+    token,
+    window: 2,
+  });
+};
+
+// Token Pair Generation
+export const generateTokenPair = (userId, role) => {
+  return {
+    accessToken: signToken(userId, role, JWT_CONFIG.shortExpires),
+    refreshToken: signToken(userId, role, JWT_CONFIG.refreshExpires),
+  };
+};
+
+// User Model Helpers
+export const assignEmailVerificationToUser = async (user) => {
+  const { token, hashedToken, expires } = generateEmailVerificationToken();
+  user.emailVerificationToken = hashedToken;
+  user.emailVerificationExpires = expires;
+  await user.save({ validateBeforeSave: false });
+  return token;
+};
+
+export const assignPasswordResetToUser = async (user) => {
+  const { token, hashedToken, expires } = generatePasswordResetToken();
+  user.passwordResetToken = hashedToken;
+  user.passwordResetExpires = expires;
+  await user.save({ validateBeforeSave: false });
+  return token;
+};
+
+export default {
+  signToken,
+  verifyJWT,
+  generateEmailVerificationToken,
+  generatePasswordResetToken,
+  generate2FASecret,
+  verify2FAToken,
+  generateTokenPair,
+  assignEmailVerificationToUser,
+  assignPasswordResetToUser,
 };
