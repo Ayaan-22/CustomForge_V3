@@ -1,59 +1,75 @@
 // File: server/middleware/errorMiddleware.js
+
+import dotenv from 'dotenv';
+import AppError from '../utils/appError.js';
 import { logger } from './logger.js';
 
-class AppError extends Error {
-  constructor(message, statusCode, details = null) {
-    super(message);
-    this.statusCode = statusCode;
-    this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
-    this.details = details;
-    this.isOperational = true;
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
+dotenv.config();
 
+const NODE_ENV = process.env.NODE_ENV || 'production';
+
+/**
+ * Database CastError → bad request
+ */
 const handleCastErrorDB = (err) => {
   const message = `Invalid ${err.path}: ${err.value}`;
-  return new AppError(message, 400, { path: err.path, value: err.value });
+  return AppError.badRequest(message, { path: err.path, value: err.value });
 };
 
+/**
+ * Mongo duplicate key error → bad request
+ */
 const handleDuplicateFieldsDB = (err) => {
-  const value = err.keyValue ? Object.values(err.keyValue)[0] : 'unknown';
-  const field = err.keyValue ? Object.keys(err.keyValue)[0] : 'unknown';
+  const field = Object.keys(err.keyValue || { _id: 'unknown' })[0];
+  const value = err.keyValue[field];
   const message = `Duplicate field value (${field}: ${value}). Please use another value!`;
-  return new AppError(message, 400, { field, value });
+  return AppError.badRequest(message, { field, value });
 };
 
+/**
+ * Mongoose validation errors → bad request
+ */
 const handleValidationErrorDB = (err) => {
-  const errors = Object.values(err.errors).map((el) => ({
-    field: el.path,
-    message: el.message
+  const errors = Object.values(err.errors || {}).map((e) => ({
+    field: e.path,
+    message: e.message,
   }));
-  const message = 'Invalid input data';
-  return new AppError(message, 400, { errors });
+  return AppError.badRequest('Invalid input data', { errors });
 };
 
+/**
+ * JWT errors → unauthorized
+ */
 const handleJWTError = () =>
-  new AppError('Invalid token. Please log in again!', 401);
+  AppError.unauthorized('Invalid token. Please log in again!');
 
+/**
+ * JWT expired → unauthorized
+ */
 const handleJWTExpiredError = () =>
-  new AppError('Your token has expired! Please log in again.', 401);
+  AppError.unauthorized('Your token has expired! Please log in again.');
 
+/**
+ * Rate limit errors → too many requests
+ */
 const handleRateLimitError = (err) =>
   new AppError(
-    'Too many requests from this IP, please try again later',
+    'Too many requests from this IP; please try again later',
     429,
     { resetTime: err.resetTime }
   );
 
+/**
+ * Send full error details in development
+ */
 const sendErrorDev = (err, req, res) => {
-  logger.error({
+  logger.error('[ERROR:DEV]', {
     message: err.message,
     stack: err.stack,
-    error: err,
     url: req.originalUrl,
     method: req.method,
-    ip: req.ip
+    ip: req.ip,
+    error: err,
   });
 
   res.status(err.statusCode).json({
@@ -61,71 +77,68 @@ const sendErrorDev = (err, req, res) => {
     error: err,
     message: err.message,
     stack: err.stack,
-    details: err.details
+    details: err.details,
   });
 };
 
+/**
+ * Send minimal, operational errors in production
+ */
 const sendErrorProd = (err, req, res) => {
   if (err.isOperational) {
-    logger.error({
+    logger.error('[ERROR:OPERATIONAL]', {
       message: err.message,
       details: err.details,
       url: req.originalUrl,
       method: req.method,
       ip: req.ip,
-      user: req.user?._id
+      user: req.user?._id,
     });
 
     res.status(err.statusCode).json({
       status: err.status,
       message: err.message,
-      ...(err.details && { details: err.details })
+      ...(err.details && { details: err.details }),
     });
   } else {
-    logger.error('Unexpected error:', {
+    // Programming or unknown error: don't leak details
+    logger.error('[ERROR:UNEXPECTED]', {
       message: err.message,
       stack: err.stack,
       url: req.originalUrl,
       method: req.method,
       ip: req.ip,
-      user: req.user?._id
+      user: req.user?._id,
     });
 
     res.status(500).json({
       status: 'error',
-      message: 'Something went very wrong!'
+      message: 'Something went very wrong!',
     });
   }
 };
 
-const errorHandler = (err, req, res, next) => {
+/**
+ * Global error handling middleware
+ */
+export const errorHandler = (err, req, res, next) => {
+  // Ensure defaults
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 
-  if (process.env.NODE_ENV === 'development') {
+  if (NODE_ENV === 'development') {
     sendErrorDev(err, req, res);
-  } else if (process.env.NODE_ENV === 'production') {
-    let error = { ...err, message: err.message };
+  } else {
+    // Copy so we can mutate safely
+    let error = Object.assign(Object.create(Object.getPrototypeOf(err)), err);
 
-    if (error.name === 'CastError') error = handleCastErrorDB(error);
-    if (error.code === 11000) error = handleDuplicateFieldsDB(error);
-    if (error.name === 'ValidationError') error = handleValidationErrorDB(error);
-    if (error.name === 'JsonWebTokenError') error = handleJWTError();
-    if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
-    if (error.name === 'RateLimitError') error = handleRateLimitError(error);
+    if (error.name === 'CastError')           error = handleCastErrorDB(error);
+    if (error.code === 11000)                 error = handleDuplicateFieldsDB(error);
+    if (error.name === 'ValidationError')     error = handleValidationErrorDB(error);
+    if (error.name === 'JsonWebTokenError')   error = handleJWTError();
+    if (error.name === 'TokenExpiredError')   error = handleJWTExpiredError();
+    if (error.name === 'RateLimitError')      error = handleRateLimitError(error);
 
     sendErrorProd(error, req, res);
   }
-};
-
-// Export all error-related functions
-export { 
-  AppError, 
-  errorHandler,
-  handleCastErrorDB,
-  handleDuplicateFieldsDB,
-  handleValidationErrorDB,
-  handleJWTError,
-  handleJWTExpiredError,
-  handleRateLimitError
 };

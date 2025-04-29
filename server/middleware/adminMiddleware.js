@@ -1,65 +1,68 @@
 // File: server/middleware/adminMiddleware.js
+
 import asyncHandler from 'express-async-handler';
 import User from '../models/User.js';
 import { logger } from './logger.js';
 import AppError from '../utils/appError.js';
 
+const ROLES = {
+  ADMIN: 'admin',
+  PUBLISHER: 'publisher',
+};
+
+// Helper: ensure the request is authenticated
+const ensureLoggedIn = (req) => {
+  if (!req.user || !req.user._id) {
+    logger.warn('[AUTH] Unauthenticated access attempt');
+    throw AppError.unauthorized('Please log in to access this resource');
+  }
+  return req.user._id;
+};
+
 /**
  * Middleware to verify admin access
  */
-const isAdmin = asyncHandler(async (req, res, next) => {
-  // 1) Check if user is logged in
-  if (!req.user) {
-    logger.warn('Unauthorized admin access attempt - no user');
-    return next(new AppError('Please log in to access this resource', 401));
+export const isAdmin = asyncHandler(async (req, res, next) => {
+  const userId = ensureLoggedIn(req);
+
+  // Only fetch the fields needed
+  const user = await User.findById(userId)
+    .select('role email')
+    .lean();
+  if (!user || user.role !== ROLES.ADMIN) {
+    logger.warn(`[AUTH:ADMIN] Unauthorized admin access by user ${userId}`);
+    throw AppError.forbidden('You do not have permission to perform this action');
   }
 
-  // 2) Check if user has admin privileges
-  const user = await User.findById(req.user._id);
-  if (!user || user.role !== 'admin') {
-    logger.warn(`Unauthorized admin access attempt by ${req.user._id}`);
-    return next(
-      new AppError('You do not have permission to perform this action', 403)
-    );
-  }
+  // Cache fresh user on req for downstream handlers
+  req.user = user;
 
-  // 3) Log admin access
-  logger.info(`Admin access granted to ${user.email}`);
+  logger.info(`[AUTH:ADMIN] Admin access granted to ${user.email}`);
   next();
 });
 
 /**
  * Middleware to verify publisher access
  */
-const isPublisher = asyncHandler(async (req, res, next) => {
-  // 1) Check if user is logged in
-  if (!req.user) {
-    logger.warn('Unauthorized publisher access attempt - no user');
-    return next(new AppError('Please log in to access this resource', 401));
+export const isPublisher = asyncHandler(async (req, res, next) => {
+  const userId = ensureLoggedIn(req);
+
+  const user = await User.findById(userId)
+    .select('role isPublisherApproved email')
+    .lean();
+  if (!user || (user.role !== ROLES.PUBLISHER && user.role !== ROLES.ADMIN)) {
+    logger.warn(`[AUTH:PUBLISHER] Unauthorized publisher access by user ${userId}`);
+    throw AppError.forbidden('You do not have permission to perform this action');
   }
 
-  // 2) Check if user has publisher or admin privileges
-  const user = await User.findById(req.user._id);
-  if (!user || (user.role !== 'publisher' && user.role !== 'admin')) {
-    logger.warn(`Unauthorized publisher access attempt by ${req.user._id}`);
-    return next(
-      new AppError('You do not have permission to perform this action', 403)
-    );
+  // If a true "publisher", check approval flag
+  if (user.role === ROLES.PUBLISHER && !user.isPublisherApproved) {
+    logger.warn(`[AUTH:PUBLISHER] Publisher not approved: ${user.email}`);
+    throw AppError.forbidden('Your publisher account is pending approval');
   }
 
-  // 3) Additional publisher-specific checks
-  if (user.role === 'publisher') {
-    if (!user.isPublisherApproved) {
-      logger.warn(`Publisher not approved: ${user.email}`);
-      return next(
-        new AppError('Your publisher account is pending approval', 403)
-      );
-    }
-  }
+  req.user = user;
 
-  logger.info(`Publisher access granted to ${user.email}`);
+  logger.info(`[AUTH:PUBLISHER] Publisher access granted to ${user.email}`);
   next();
 });
-
-// Export the middleware functions
-export { isAdmin, isPublisher };
