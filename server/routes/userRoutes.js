@@ -1,4 +1,5 @@
 // File: server/routes/userRoutes.js
+
 import express from 'express';
 import {
   getAllUsers,
@@ -9,17 +10,21 @@ import {
   updateUser,
   deleteUser,
   getWishlist,
-  getUserOrders,
-  setupTwoFactor,
-  verifyTwoFactor,
-  disableTwoFactor
+  getUserOrders
 } from '../controllers/userController.js';
-import { protect, restrictTo } from '../middleware/authMiddleware.js';
+import {
+  protect,
+  restrictTo,
+  verifiedEmail,
+  twoFactorAuth
+} from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// All routes require authentication
+// All routes require login
 router.use(protect);
+router.use(verifiedEmail);
+//router.use(twoFactorAuth);
 
 // Current user routes
 router.get('/me', getMe);
@@ -27,24 +32,12 @@ router.patch('/update-me', updateMe);
 router.delete('/delete-me', deleteMe);
 
 // Wishlist routes
-router.route('/wishlist')
-  .get(getWishlist);
+router.get('/wishlist', getWishlist);
 
 // Order history
-router.route('/orders')
-  .get(getUserOrders);
+router.get('/orders', getUserOrders);
 
-// Two-factor authentication
-router.route('/2fa/setup')
-  .post(setupTwoFactor);
-
-router.route('/2fa/verify')
-  .post(verifyTwoFactor);
-
-router.route('/2fa/disable')
-  .delete(disableTwoFactor);
-
-// Admin only routes
+// Admin-only routes
 router.use(restrictTo('admin'));
 
 router.route('/')

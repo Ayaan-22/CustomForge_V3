@@ -5,7 +5,7 @@ import asyncHandler from 'express-async-handler';
 
 const router = express.Router();
 
-// ✅ Send Welcome Email
+//  Send Welcome Email
 router.post('/send-welcome', asyncHandler(async (req, res) => {
   const { email, name } = req.body;
 
@@ -21,7 +21,7 @@ router.post('/send-welcome', asyncHandler(async (req, res) => {
   res.status(200).json({ status: 'success', message: 'Welcome email sent successfully!' });
 }));
 
-// ✅ Send Password Reset Email
+//  Send Password Reset Email
 router.post('/send-password-reset', asyncHandler(async (req, res) => {
   const { email, name, resetToken } = req.body;
 
@@ -37,7 +37,7 @@ router.post('/send-password-reset', asyncHandler(async (req, res) => {
   res.status(200).json({ status: 'success', message: 'Password reset email sent successfully!' });
 }));
 
-// ✅ Send Order Confirmation Email
+//  Send Order Confirmation Email
 router.post('/send-order-confirmation', asyncHandler(async (req, res) => {
   const { email, name, order } = req.body;
 
@@ -53,7 +53,7 @@ router.post('/send-order-confirmation', asyncHandler(async (req, res) => {
   res.status(200).json({ status: 'success', message: 'Order confirmation email sent successfully!' });
 }));
 
-// ✅ Send Email Verification
+//  Send Email Verification
 router.post('/send-verification', asyncHandler(async (req, res) => {
   const { email, name, verificationToken } = req.body;
 

@@ -1,5 +1,6 @@
 // File: server/routes/authRoutes.js
-import express from 'express';
+
+import express from "express";
 import {
   signup,
   login,
@@ -10,32 +11,37 @@ import {
   updatePassword,
   enableTwoFactor,
   verifyTwoFactor,
-  disableTwoFactor
-} from '../controllers/authController.js';
-import { loginLimiter } from '../controllers/authController.js';
-import { protect } from '../middleware/authMiddleware.js'; // Added missing import
+  disableTwoFactor,
+} from "../controllers/authController.js";
+import { loginLimiter } from "../controllers/authController.js";
+import {
+  protect,
+  verifiedEmail,
+  twoFactorAuth,
+} from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 // Public routes
-router.post('/register', signup); // Changed from /signup to /register for consistency
-router.post('/login', loginLimiter, login);
-router.get('/logout', logout);
-router.get('/verify-email/:token', verifyEmail);
+router.post("/register", signup);
+router.post("/login", loginLimiter, login);
+router.get("/logout", logout);
+router.get("/verify-email/:token", verifyEmail);
 
-// Password related routes
-router.post('/forgot-password', forgotPassword);
-router.patch('/reset-password/:token', resetPassword);
+// Password recovery routes
+router.post("/forgot-password", forgotPassword);
+router.patch("/reset-password/:token", resetPassword);
 
-// Protected routes (require authentication)
-router.use(protect);
+// Authenticated routes
+router.use(protect); // Must be logged in
+router.use(verifiedEmail); // Must have verified email
 
-router.patch('/update-password', updatePassword);
+// Sensitive routes - Require 2FA if enabled
+router.patch("/update-password", twoFactorAuth, updatePassword);
 
-// Two-factor authentication routes
-router.route('/2fa')
-  .post(enableTwoFactor)
-  .delete(disableTwoFactor);
-router.post('/2fa/verify', verifyTwoFactor);
+// Two-Factor Authentication setup
+router.post("/2fa/enable", twoFactorAuth, enableTwoFactor);
+router.post("/2fa/verify", twoFactorAuth, verifyTwoFactor);
+router.delete("/2fa/disable", twoFactorAuth, disableTwoFactor);
 
 export default router;

@@ -10,18 +10,18 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Webhook doesn't need protection (handled by Stripe signature)
+// Webhook for Stripe (No protect middleware here)
 router.route('/webhook')
   .post(handleWebhook);
 
-// Protected routes
+// Authenticated Payment Operations
 router.use(protect);
 
 router.route('/create-payment-intent')
   .post(createPaymentIntent);
 
 router.route('/payment-methods')
-  .get(getPaymentMethods)
-  .post(savePaymentMethod);
+  .get(getPaymentMethods) // List methods
+  .post(savePaymentMethod); // Save new method
 
 export default router;

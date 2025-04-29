@@ -1,4 +1,5 @@
 // File: server/routes/adminRoutes.js
+
 import express from 'express';
 import {
   getSalesAnalytics,
@@ -7,13 +8,20 @@ import {
   getUserById,
   deleteUser
 } from '../controllers/adminController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import {
+  protect,
+  verifiedEmail,
+  twoFactorAuth
+} from '../middleware/authMiddleware.js';
 import { isAdmin } from '../middleware/adminMiddleware.js';
 
 const router = express.Router();
 
-// Apply protection and admin check to all routes
-router.use(protect, isAdmin);
+// Apply all protection and checks
+router.use(protect);
+router.use(verifiedEmail);
+//router.use(twoFactorAuth);
+router.use(isAdmin);
 
 // User management
 router.get('/users', getAllUsers);

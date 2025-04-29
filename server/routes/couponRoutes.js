@@ -11,15 +11,17 @@ import { protect, restrictTo } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
+// Coupon Routes (admin only)
 router.use(protect, restrictTo('admin'));
 
+// CRUD for Coupons
 router.route('/')
-  .post(createCoupon)
-  .get(getCoupons);
+  .post(createCoupon) // Create
+  .get(getCoupons);   // Get all
 
 router.route('/:id')
-  .get(getCoupon)
-  .patch(updateCoupon)
-  .delete(deleteCoupon);
+  .get(getCoupon)      // Get one
+  .patch(updateCoupon) // Update
+  .delete(deleteCoupon); // Delete
 
 export default router;

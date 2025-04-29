@@ -13,19 +13,20 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// All routes require authentication
+// Cart Routes (must be logged in)
 router.use(protect);
 
+// Manage cart
 router.route('/')
-  .get(getCart)
-  .post(addToCart)
-  .delete(clearCart);
+  .get(getCart)        // View cart
+  .post(addToCart)     // Add to cart
+  .delete(clearCart);  // Clear cart
 
 router.route('/:productId')
-  .patch(updateCartItem)
-  .delete(removeFromCart);
+  .patch(updateCartItem)   // Update item quantity
+  .delete(removeFromCart); // Remove item
 
-// Coupon routes
+// Manage coupons on cart
 router.route('/coupon')
   .post(applyCoupon)
   .delete(removeCoupon);
