@@ -1,66 +1,87 @@
 // File: server/controllers/orderController.js
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
+import Cart from "../models/Cart.js";
 import AppError from "../utils/appError.js";
 import asyncHandler from "express-async-handler";
 
 /**
- * @desc    Create new order
+ * @desc    Create new order from the cart
  * @route   POST /api/orders
  * @access  Private
  */
 export const createOrder = asyncHandler(async (req, res, next) => {
   const {
-    orderItems,
     shippingAddress,
-    paymentMethod,
-    itemsPrice,
-    taxPrice,
-    shippingPrice,
-    totalPrice,
+    paymentMethod = "stripe", // Default to stripe
     coupon,
   } = req.body;
 
-  if (!orderItems || orderItems.length === 0) {
-    return next(new AppError("No order items", 400));
-  }
-
-  // Verify all products exist and are in stock
-  const products = await Product.find({
-    _id: { $in: orderItems.map((item) => item.product) },
+  // 1. Retrieve and validate cart
+  const cart = await Cart.findOne({ user: req.user._id }).populate({
+    path: 'items.product',
+    select: 'name images finalPrice stock'
   });
 
-  if (products.length !== orderItems.length) {
-    return next(new AppError("One or more products not found", 404));
+  if (!cart || cart.items.length === 0) {
+    return next(new AppError("No items in the cart", 400));
   }
 
-  for (const item of orderItems) {
-    const product = products.find((p) => p._id.toString() === item.product);
+  // 2. Calculate prices
+  const itemsPrice = cart.items.reduce(
+    (sum, item) => sum + (item.product.finalPrice * item.quantity),
+    0
+  );
+  const shippingPrice = itemsPrice > 100 ? 0 : 10; // Example shipping calculation
+  const taxPrice = Number((itemsPrice * 0.1).toFixed(2)); // Example 10% tax
+  const totalPrice = Number((itemsPrice + shippingPrice + taxPrice).toFixed(2));
+
+  // 3. Verify products and stock
+  const outOfStockItems = [];
+  const productsToUpdate = [];
+
+  for (const item of cart.items) {
+    const product = item.product;
+    
+    if (!product) {
+      return next(new AppError(`Product ${item.product._id} not found`, 404));
+    }
+
     if (product.stock < item.quantity) {
-      return next(
-        new AppError(
-          `Not enough stock for ${product.name}. Only ${product.stock} available`,
-          400
-        )
-      );
+      outOfStockItems.push({
+        product: product._id,
+        name: product.name,
+        available: product.stock,
+        requested: item.quantity
+      });
+    } else {
+      productsToUpdate.push({
+        productId: product._id,
+        quantity: item.quantity
+      });
     }
   }
 
-  // Create order items with product details
-  const orderItemsWithDetails = orderItems.map((item) => {
-    const product = products.find((p) => p._id.toString() === item.product);
-    return {
-      product: product._id,
-      name: product.name,
-      image: product.image,
-      price: product.finalPrice,
-      quantity: item.quantity,
-    };
-  });
+  if (outOfStockItems.length > 0) {
+    return next(new AppError({
+      message: "Some items are out of stock",
+      outOfStockItems
+    }, 400));
+  }
 
-  const order = new Order({
+  // 4. Create order items (ensure image is properly set)
+  const orderItems = cart.items.map(item => ({
+    product: item.product._id,
+    name: item.product.name,
+    image: item.product.images?.[0] || 'default-product-image.jpg',
+    price: item.product.finalPrice,
+    quantity: item.quantity
+  }));
+
+  // 5. Create order with all required fields
+  const order = await Order.create({
     user: req.user._id,
-    orderItems: orderItemsWithDetails,
+    orderItems,
     shippingAddress,
     paymentMethod,
     itemsPrice,
@@ -70,18 +91,26 @@ export const createOrder = asyncHandler(async (req, res, next) => {
     coupon: coupon || undefined,
   });
 
-  const createdOrder = await order.save();
+  // 6. Update product stock
+  const bulkOps = productsToUpdate.map(({ productId, quantity }) => ({
+    updateOne: {
+      filter: { _id: productId },
+      update: { $inc: { stock: -quantity } }
+    }
+  }));
 
-  // Reduce product stock
-  for (const item of orderItems) {
-    await Product.findByIdAndUpdate(item.product, {
-      $inc: { stock: -item.quantity },
-    });
-  }
+  await Product.bulkWrite(bulkOps);
+
+  // 7. Clear cart
+  await Cart.findOneAndUpdate(
+    { _id: cart._id },
+    { $set: { items: [] } }
+  );
 
   res.status(201).json({
     success: true,
-    data: createdOrder,
+    data: order,
+    message: "Order created successfully"
   });
 });
 
@@ -112,36 +141,26 @@ export const getOrderById = asyncHandler(async (req, res, next) => {
 });
 
 /**
- * @desc    Update order to paid
- * @route   PUT /api/orders/:id/pay
+ * @desc    Get payment status
+ * @route   GET /api/orders/:id/payment-status
  * @access  Private
  */
-export const updateOrderToPaid = asyncHandler(async (req, res, next) => {
+export const getPaymentStatus = asyncHandler(async (req, res, next) => {
   const order = await Order.findById(req.params.id);
-
+  
   if (!order) {
-    return next(new AppError("Order not found", 404));
+    return next(new AppError('Order not found', 404));
   }
 
-  // Check if user is owner or admin
-  if (order.user.toString() !== req.user.id && req.user.role !== "admin") {
-    return next(new AppError("Not authorized to update this order", 401));
+  if (order.user.toString() !== req.user.id && req.user.role !== 'admin') {
+    return next(new AppError('Not authorized', 401));
   }
 
-  order.isPaid = true;
-  order.paidAt = Date.now();
-  order.paymentResult = {
-    id: req.body.id,
-    status: req.body.status,
-    update_time: req.body.update_time,
-    email_address: req.body.payer.email_address,
-  };
-
-  const updatedOrder = await order.save();
-
-  res.json({
+  res.status(200).json({
     success: true,
-    data: updatedOrder,
+    isPaid: order.isPaid,
+    paymentMethod: order.paymentMethod,
+    paymentStatus: order.paymentResult?.status
   });
 });
 
@@ -163,6 +182,7 @@ export const updateOrderToDelivered = asyncHandler(async (req, res, next) => {
 
   order.isDelivered = true;
   order.deliveredAt = Date.now();
+  order.status = "delivered";
 
   const updatedOrder = await order.save();
 
@@ -170,6 +190,39 @@ export const updateOrderToDelivered = asyncHandler(async (req, res, next) => {
     success: true,
     data: updatedOrder,
   });
+});
+
+/**
+ * @desc    Process refund
+ * @route   POST /api/orders/:id/refund
+ * @access  Private/Admin
+ */
+export const processRefund = asyncHandler(async (req, res, next) => {
+  const order = await Order.findById(req.params.id);
+  
+  if (!order) {
+    return next(new AppError('Order not found', 404));
+  }
+
+  if (!order.isPaid) {
+    return next(new AppError('Order is not paid', 400));
+  }
+
+  if (order.status !== 'delivered') {
+    return next(new AppError('Only delivered orders can be refunded', 400));
+  }
+
+  try {
+    await order.processRefund();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Refund processed successfully'
+    });
+    
+  } catch (error) {
+    return next(new AppError(`Refund failed: ${error.message}`, 400));
+  }
 });
 
 /**
@@ -189,28 +242,15 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
     return next(new AppError("Not authorized to cancel this order", 401));
   }
 
-  if (order.isDelivered) {
-    return next(new AppError("Delivered orders cannot be cancelled", 400));
-  }
-
-  if (order.isPaid) {
-    // TODO: Initiate refund process
-  }
-
-  order.status = "cancelled";
-  await order.save();
-
-  // Restore product stock
-  for (const item of order.orderItems) {
-    await Product.findByIdAndUpdate(item.product, {
-      $inc: { stock: item.quantity },
+  try {
+    await order.cancelOrder();
+    res.json({
+      success: true,
+      message: "Order cancelled successfully",
     });
+  } catch (error) {
+    return next(new AppError(error.message, 400));
   }
-
-  res.json({
-    success: true,
-    message: "Order cancelled successfully",
-  });
 });
 
 /**
@@ -228,17 +268,15 @@ export const requestReturn = asyncHandler(async (req, res, next) => {
 
   // Check if user is owner
   if (order.user.toString() !== req.user.id) {
-    return next(
-      new AppError("Not authorized to request return for this order", 401)
-    );
+    return next(new AppError("Not authorized to request return for this order", 401));
   }
 
   if (!order.isDelivered) {
     return next(new AppError("Order must be delivered before return", 400));
   }
 
-  if (order.returnRequest) {
-    return next(new AppError("Return already requested for this order", 400));
+  if (order.status === 'refunded') {
+    return next(new AppError("Order already refunded", 400));
   }
 
   // Must request return within 30 days of delivery
@@ -249,11 +287,13 @@ export const requestReturn = asyncHandler(async (req, res, next) => {
     return next(new AppError("Return window has expired", 400));
   }
 
+  order.status = "return_requested";
   order.returnRequest = {
     requestedAt: new Date(),
     reason,
-    status: "Pending",
+    status: "pending",
   };
+
   await order.save();
 
   res.json({
@@ -268,32 +308,27 @@ export const requestReturn = asyncHandler(async (req, res, next) => {
  * @access  Private/Admin
  */
 export const processReturn = asyncHandler(async (req, res, next) => {
-  const { action } = req.body; // 'approve' or 'reject'
+  const { action, rejectionReason } = req.body;
   const order = await Order.findById(req.params.id);
 
   if (!order) {
     return next(new AppError("Order not found", 404));
   }
 
-  if (!order.returnRequest) {
-    return next(new AppError("No return request for this order", 400));
-  }
-
-  if (order.returnRequest.status !== "Pending") {
-    return next(new AppError("Return request already processed", 400));
+  if (order.status !== 'return_requested') {
+    return next(new AppError("No pending return request for this order", 400));
   }
 
   if (action === "approve") {
-    order.returnRequest.status = "Approved";
+    order.status = "refunded";
+    order.refundedAt = new Date();
+    order.returnRequest.status = "approved";
     order.returnRequest.processedAt = new Date();
-    order.status = "Returned";
-
-    // TODO: Initiate refund process if paid
   } else if (action === "reject") {
-    order.returnRequest.status = "Rejected";
+    order.status = "delivered"; // Revert to delivered status
+    order.returnRequest.status = "rejected";
     order.returnRequest.processedAt = new Date();
-    order.returnRequest.rejectionReason =
-      req.body.rejectionReason || "Not specified";
+    order.returnRequest.rejectionReason = rejectionReason || "Not specified";
   } else {
     return next(new AppError("Invalid action", 400));
   }
@@ -312,7 +347,7 @@ export const processReturn = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const getMyOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({ user: req.user._id });
+  const orders = await Order.find({ user: req.user._id }).sort("-createdAt");
   res.json({
     success: true,
     count: orders.length,

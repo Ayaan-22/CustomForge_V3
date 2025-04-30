@@ -4,11 +4,12 @@ import {
   createOrder,
   getOrderById,
   getMyOrders,
-  updateOrderToPaid,
+  getPaymentStatus,
   updateOrderToDelivered,
   cancelOrder,
   requestReturn,
   processReturn,
+  processRefund,
   getOrders
 } from '../controllers/orderController.js';
 import { protect, restrictTo } from '../middleware/authMiddleware.js';
@@ -20,31 +21,34 @@ router.use(protect);
 
 // User order routes
 router.route('/')
-  .get(getMyOrders)
-  .post(createOrder);
+  .post(createOrder) // Create new order
+  .get(getMyOrders); // Get logged-in user's orders
 
 router.route('/:id')
-  .get(getOrderById);
+  .get(getOrderById); // Get specific order
 
-router.route('/:id/pay')
-  .put(updateOrderToPaid);
+router.route('/:id/payment-status')
+  .get(getPaymentStatus); // Check payment status
 
 router.route('/:id/cancel')
-  .put(cancelOrder);
+  .put(cancelOrder); // Cancel order
 
 router.route('/:id/return')
-  .post(requestReturn);
+  .post(requestReturn); // Request return
 
 // Admin only routes
 router.use(restrictTo('admin'));
 
 router.route('/')
-  .get(getOrders);
+  .get(getOrders); // Get all orders (admin)
 
 router.route('/:id/deliver')
-  .put(updateOrderToDelivered);
+  .put(updateOrderToDelivered); // Mark as delivered
+
+router.route('/:id/refund')
+  .post(processRefund); // Process refund
 
 router.route('/:id/process-return')
-  .put(processReturn);
+  .put(processReturn); // Process return request
 
 export default router;

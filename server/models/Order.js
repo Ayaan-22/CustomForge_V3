@@ -38,7 +38,11 @@ const orderItemSchema = new mongoose.Schema(
  */
 const shippingAddressSchema = new mongoose.Schema(
   {
-    street: {
+    fullName: {
+      type: String,
+      required: [true, "Full name is required"]
+    },
+    address: {
       type: String,
       required: [true, "Street address is required"],
     },
@@ -68,10 +72,29 @@ const shippingAddressSchema = new mongoose.Schema(
  */
 const paymentResultSchema = new mongoose.Schema(
   {
-    paymentId: String,
-    status: String,
-    updateTime: String,
-    email: String,
+    id: {
+      type: String,
+      required: [true, "Payment ID is required"]
+    },
+    status: {
+      type: String,
+      required: [true, "Payment status is required"],
+      enum: ["succeeded", "failed", "pending", "refunded"]
+    },
+    update_time: {
+      type: String,
+      required: [true, "Payment update time is required"]
+    },
+    email_address: {
+      type: String,
+      required: [true, "Payer email is required"],
+      match: [/.+\@.+\..+/, "Please fill a valid email address"]
+    },
+    payment_method: {
+      type: String,
+      enum: ["stripe", "paypal", "cod"],
+      required: true
+    }
   },
   { _id: false }
 );
@@ -127,6 +150,7 @@ const orderSchema = new mongoose.Schema(
       default: false,
     },
     deliveredAt: Date,
+    refundedAt: Date,
     status: {
       type: String,
       enum: [
@@ -135,7 +159,7 @@ const orderSchema = new mongoose.Schema(
         "shipped",
         "delivered",
         "cancelled",
-        "returned",
+        "refunded"
       ],
       default: "pending",
     },
@@ -152,12 +176,13 @@ orderSchema.index({ user: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ totalPrice: 1 });
+orderSchema.index({ "paymentResult.id": 1 });
 
 /**
  * Middleware: Update product stock when order is created
  */
 orderSchema.pre("save", async function (next) {
-  if (this.isNew) {
+  if (this.isNew && this.status === "pending") {
     for (const item of this.orderItems) {
       await mongoose
         .model("Product")
@@ -168,10 +193,10 @@ orderSchema.pre("save", async function (next) {
 });
 
 /**
- * Middleware: Restore stock if order is cancelled
+ * Middleware: Restore stock if order is cancelled or refunded
  */
 orderSchema.post("findOneAndUpdate", async function (doc) {
-  if (doc && doc.status === "cancelled") {
+  if (doc && ["cancelled", "refunded"].includes(doc.status)) {
     for (const item of doc.orderItems) {
       await mongoose
         .model("Product")
@@ -183,21 +208,46 @@ orderSchema.post("findOneAndUpdate", async function (doc) {
 /**
  * Method: Mark order as paid
  */
-orderSchema.methods.markAsPaid = function (paymentData) {
+orderSchema.methods.markAsPaid = async function(paymentResult) {
+  if (this.isPaid) {
+    throw new Error("Order is already paid");
+  }
+
   this.isPaid = true;
   this.paidAt = Date.now();
-  this.paymentResult = paymentData;
+  this.paymentResult = paymentResult;
   this.status = "processing";
+  
+  return this.save();
+};
+
+/**
+ * Method: Process refund
+ */
+orderSchema.methods.processRefund = async function() {
+  if (this.status !== 'delivered') {
+    throw new Error('Only delivered orders can be refunded');
+  }
+
+  this.status = "refunded";
+  this.refundedAt = Date.now();
+  this.paymentResult.status = "refunded";
+  
   return this.save();
 };
 
 /**
  * Method: Cancel order
  */
-orderSchema.methods.cancelOrder = function () {
+orderSchema.methods.cancelOrder = async function() {
+  if (this.isPaid) {
+    throw new Error("Paid orders cannot be cancelled - request a refund instead");
+  }
+
   if (this.status === "delivered") {
     throw new Error("Delivered orders cannot be cancelled");
   }
+
   this.status = "cancelled";
   return this.save();
 };

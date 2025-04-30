@@ -1,6 +1,7 @@
 // File: server/routes/paymentRoutes.js
 import express from 'express';
 import {
+  processPayment,
   createPaymentIntent,
   handleWebhook,
   savePaymentMethod,
@@ -10,18 +11,24 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Webhook for Stripe (No protect middleware here)
+// Webhook for Stripe (No authentication needed)
 router.route('/webhook')
   .post(handleWebhook);
 
 // Authenticated Payment Operations
 router.use(protect);
 
-router.route('/create-payment-intent')
+// Unified payment processing endpoint
+router.route('/process')
+  .post(processPayment);
+
+// Stripe-specific operations
+router.route('/create-intent')
   .post(createPaymentIntent);
 
+// Payment methods management
 router.route('/payment-methods')
-  .get(getPaymentMethods) // List methods
+  .get(getPaymentMethods) // List saved methods
   .post(savePaymentMethod); // Save new method
 
 export default router;
