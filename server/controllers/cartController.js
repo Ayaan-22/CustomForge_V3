@@ -23,14 +23,16 @@ export const getCart = asyncHandler(async (req, res) => {
     });
   }
 
-  // Calculate subtotal
-  let totalPrice = cart.items.reduce(
-    (total, item) => total + item.product.finalPrice * item.quantity,
-    0
-  );
+  // Calculate total price
+  const totalPrice = await cart.items.reduce(async (totalPromise, item) => {
+    const product = await Product.findById(item.product);
+    const total = await totalPromise;
+    return total + product.finalPrice * item.quantity;
+  }, Promise.resolve(0));
 
   let discount = 0;
 
+  // Calculate discount based on coupon
   if (cart.coupon) {
     if (cart.coupon.discountType === "percentage") {
       discount = totalPrice * (cart.coupon.discountValue / 100);
@@ -203,7 +205,7 @@ export const applyCoupon = asyncHandler(async (req, res, next) => {
     code: couponCode,
     validFrom: { $lte: Date.now() },
     validTo: { $gte: Date.now() },
-    isActive: true, // ✅ added check if coupon is active
+    isActive: true,
   });
 
   if (!coupon) {

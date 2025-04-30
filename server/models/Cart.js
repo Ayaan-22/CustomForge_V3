@@ -18,10 +18,6 @@ const cartItemSchema = new mongoose.Schema(
       max: [10, "Maximum quantity per product is 10"],
       default: 1,
     },
-    priceAtAddition: {
-      type: Number,
-      required: [true, "Price at addition is required"],
-    },
   },
   { _id: false }
 );
@@ -59,7 +55,7 @@ cartSchema.index({ user: 1 });
 cartSchema.index({ "items.product": 1 });
 
 /**
- * Middleware: Validate stock and set price before saving
+ * Middleware: Validate stock before saving
  */
 cartSchema.pre("save", async function (next) {
   if (!this.isModified("items")) return next();
@@ -69,21 +65,25 @@ cartSchema.pre("save", async function (next) {
     .model("Product")
     .find({ _id: { $in: productIds } });
 
+  // Loop through items and ensure stock is validated
   for (const item of this.items) {
     const product = products.find((p) => p._id.equals(item.product));
+    
     if (!product) {
-      throw new Error(`Product ${item.product} not found`);
+      return next(new Error(`Product ${item.product} not found`));
     }
+
+    // Ensure product has enough stock
     if (product.stock < item.quantity) {
-      throw new Error(
-        `Insufficient stock for ${product.name}. Only ${product.stock} available`
+      return next(
+        new Error(
+          `Insufficient stock for ${product.name}. Only ${product.stock} available`
+        )
       );
-    }
-    if (!item.priceAtAddition) {
-      item.priceAtAddition = product.finalPrice;
     }
   }
 
+  // Update lastUpdated timestamp
   this.lastUpdated = Date.now();
   next();
 });
@@ -93,7 +93,10 @@ cartSchema.pre("save", async function (next) {
  */
 cartSchema.virtual("subtotal").get(function () {
   return this.items.reduce(
-    (total, item) => total + item.priceAtAddition * item.quantity,
+    async (total, item) => {
+      const product = await mongoose.model("Product").findById(item.product);
+      return total + product.finalPrice * item.quantity;
+    },
     0
   );
 });
@@ -114,36 +117,6 @@ cartSchema.virtual("total").get(function () {
 
   return Math.max(0, total);
 });
-
-/**
- * Add item or update quantity
- */
-cartSchema.methods.addItem = async function (productId, quantity) {
-  const existingItem = this.items.find(
-    (item) => item.product.toString() === productId.toString()
-  );
-
-  if (existingItem) {
-    existingItem.quantity += quantity;
-  } else {
-    const product = await mongoose.model("Product").findById(productId);
-    this.items.push({
-      product: productId,
-      quantity,
-      priceAtAddition: product.finalPrice,
-    });
-  }
-
-  return this.save();
-};
-
-/**
- * Clear all cart items
- */
-cartSchema.methods.clearCart = function () {
-  this.items = [];
-  return this.save();
-};
 
 const Cart = mongoose.model("Cart", cartSchema);
 export default Cart;
