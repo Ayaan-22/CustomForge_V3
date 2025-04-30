@@ -534,19 +534,17 @@ export const deleteProduct = asyncHandler(async (req, res, next) => {
  * @access  Private/Admin
  */
 export const getProductReviews = asyncHandler(async (req, res, next) => {
-  const product = await Product.findById(req.params.id).populate({
-    path: "reviews.user",
-    select: "name email avatar",
-  });
-
-  if (!product) {
-    return next(new AppError("No product found with that ID", 404));
-  }
+  const reviews = await Review.find({ product: req.params.id })
+    .populate({
+      path: "user",
+      select: "name email avatar",
+    })
+    .sort({ createdAt: -1 });
 
   res.status(200).json({
     success: true,
-    count: product.reviews.length,
-    data: product.reviews,
+    count: reviews.length,
+    data: reviews,
   });
 });
 

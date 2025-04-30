@@ -1,12 +1,12 @@
-// File: server/models/Review.js
 import mongoose from "mongoose";
 
 /**
- * Schema for reviews
+ * Review Schema
+ * Defines the structure for product/game reviews with validation and indexes
  */
 const reviewSchema = new mongoose.Schema(
   {
-    // Reference to either Product or Game
+    // Reference to either Product or Game (mutually exclusive)
     product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
@@ -68,6 +68,7 @@ const reviewSchema = new mongoose.Schema(
         },
       },
     ],
+    // Game-specific fields
     platform: {
       type: String,
       enum: ["PC", "PlayStation", "Xbox", "Nintendo", "Mobile", "VR"],
@@ -90,7 +91,11 @@ const reviewSchema = new mongoose.Schema(
   }
 );
 
-// Compound index to prevent duplicate reviews
+// ======================
+// INDEXES
+// ======================
+
+// Prevent duplicate reviews by the same user for the same product/game
 reviewSchema.index(
   { user: 1, product: 1 },
   { unique: true, partialFilterExpression: { product: { $exists: true } } }
@@ -101,15 +106,19 @@ reviewSchema.index(
   { unique: true, partialFilterExpression: { game: { $exists: true } } }
 );
 
-// Indexes for sorting and filtering
-reviewSchema.index({ rating: -1 });
-reviewSchema.index({ helpfulVotes: -1 });
-reviewSchema.index({ createdAt: -1 });
-reviewSchema.index({ product: 1, rating: -1 });
-reviewSchema.index({ game: 1, rating: -1 });
+// Performance indexes
+reviewSchema.index({ rating: -1 }); // For sorting by highest rating
+reviewSchema.index({ helpfulVotes: -1 }); // For most helpful reviews
+reviewSchema.index({ createdAt: -1 }); // For newest reviews
+reviewSchema.index({ product: 1, rating: -1 }); // For product-specific ratings
+reviewSchema.index({ game: 1, rating: -1 }); // For game-specific ratings
+
+// ======================
+// MIDDLEWARE
+// ======================
 
 /**
- * Middleware: Populate user data when querying reviews
+ * Pre-find Hook: Automatically populate user data
  */
 reviewSchema.pre(/^find/, function (next) {
   this.populate({
@@ -120,7 +129,31 @@ reviewSchema.pre(/^find/, function (next) {
 });
 
 /**
- * Method: Increment helpful votes
+ * Post-save Hook: Update average ratings
+ */
+reviewSchema.post("save", function (doc) {
+  doc.constructor.calculateAverageRatings(
+    doc.product || null,
+    doc.game || null
+  );
+});
+
+/**
+ * Post-remove Hook: Update average ratings
+ */
+reviewSchema.post("remove", function (doc) {
+  doc.constructor.calculateAverageRatings(
+    doc.product || null,
+    doc.game || null
+  );
+});
+
+// ======================
+// METHODS
+// ======================
+
+/**
+ * Mark review as helpful (increment vote count)
  */
 reviewSchema.methods.markHelpful = async function () {
   this.helpfulVotes += 1;
@@ -129,7 +162,7 @@ reviewSchema.methods.markHelpful = async function () {
 };
 
 /**
- * Method: Report review
+ * Report a review
  */
 reviewSchema.methods.report = async function (reason) {
   this.reported = true;
@@ -138,8 +171,12 @@ reviewSchema.methods.report = async function (reason) {
   return this;
 };
 
+// ======================
+// STATICS
+// ======================
+
 /**
- * Static: Update product/game ratings when review is created
+ * Calculate and update average ratings for a product/game
  */
 reviewSchema.statics.calculateAverageRatings = async function (
   productId,
@@ -162,49 +199,25 @@ reviewSchema.statics.calculateAverageRatings = async function (
     },
   ]);
 
-  if (stats.length > 0) {
-    await mongoose.model(targetModel).findByIdAndUpdate(targetId, {
-      ratings: {
-        average: stats[0].avgRating,
-        totalReviews: stats[0].nRating,
-      },
-    });
-  } else {
-    await mongoose.model(targetModel).findByIdAndUpdate(targetId, {
-      ratings: {
-        average: 0,
-        totalReviews: 0,
-      },
-    });
-  }
+  const updateData =
+    stats.length > 0
+      ? {
+          average: stats[0].avgRating,
+          totalReviews: stats[0].nRating,
+        }
+      : {
+          average: 0,
+          totalReviews: 0,
+        };
+
+  await mongoose.model(targetModel).findByIdAndUpdate(targetId, {
+    ratings: updateData,
+  });
 };
 
-/**
- * Middleware: Update ratings after saving
- */
-reviewSchema.post("save", function (doc) {
-  // Check if this is a product or game review
-  const targetField = doc.product ? "product" : "game";
-  const targetId = doc[targetField];
-
-  doc.constructor.calculateAverageRatings(
-    targetField === "product" ? targetId : null,
-    targetField === "game" ? targetId : null
-  );
-});
-
-/**
- * Middleware: Update ratings after removing
- */
-reviewSchema.post("remove", function (doc) {
-  const targetField = doc.product ? "product" : "game";
-  const targetId = doc[targetField];
-
-  doc.constructor.calculateAverageRatings(
-    targetField === "product" ? targetId : null,
-    targetField === "game" ? targetId : null
-  );
-});
+// ======================
+// MODEL EXPORT
+// ======================
 
 const Review = mongoose.model("Review", reviewSchema);
 export default Review;
