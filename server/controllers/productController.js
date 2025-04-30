@@ -4,6 +4,8 @@ import APIFeatures from "../utils/apiFeatures.js";
 import AppError from "../utils/appError.js";
 import asyncHandler from "express-async-handler";
 import User from "../models/User.js";
+import Review from "../models/Review.js";
+import Order from "../models/Order.js";
 
 /**
  * @desc    Public Product Controllers
@@ -196,12 +198,13 @@ export const createProductReview = asyncHandler(async (req, res, next) => {
     return next(new AppError("No product found with that ID", 404));
   }
 
-  // Check if user already reviewed
-  const alreadyReviewed = product.reviews.find(
-    (r) => r.user.toString() === req.user.id.toString()
-  );
+  // Check if user already reviewed using the Review model directly
+  const existingReview = await Review.findOne({
+    user: req.user.id,
+    product: req.params.id
+  });
 
-  if (alreadyReviewed) {
+  if (existingReview) {
     return next(new AppError("Product already reviewed", 400));
   }
 
@@ -212,26 +215,22 @@ export const createProductReview = asyncHandler(async (req, res, next) => {
     isPaid: true,
   });
 
-  const review = {
+  // Create new review using the Review model
+  const review = await Review.create({
     user: req.user.id,
-    name: req.user.name,
+    product: req.params.id,
     rating: Number(rating),
     title,
     comment,
     verifiedPurchase: hasPurchased,
-  };
+  });
 
-  product.reviews.push(review);
-  product.ratings.totalReviews = product.reviews.length;
-  product.ratings.average =
-    product.reviews.reduce((acc, item) => item.rating + acc, 0) /
-    product.reviews.length;
-
-  await product.save();
+  // The average rating will be updated automatically by the Review model's post-save hook
 
   res.status(201).json({
     success: true,
     message: "Review added",
+    data: review
   });
 });
 
@@ -283,6 +282,13 @@ export const getWishlist = asyncHandler(async (req, res) => {
     path: "wishlist",
     select: "name image finalPrice category availability",
   });
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: "User not found",
+    });
+  }
 
   res.status(200).json({
     success: true,
