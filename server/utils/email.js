@@ -92,10 +92,4 @@ export default class Email {
   async sendVerificationEmail() {
     await this.send("emailVerification", "Verify your GameShop account email");
   }
-
-  async send2FA() {
-    await this.send("2fa", "Your 2FA code for GameShop", {
-      code: this.data.code,
-    });
-  }
 }
