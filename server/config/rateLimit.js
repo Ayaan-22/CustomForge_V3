@@ -1,5 +1,4 @@
 // File: server/config/rateLimit.js
-
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import { logger } from "../middleware/logger.js";
@@ -37,9 +36,10 @@ const buildLimiter = ({ windowMs, max, message, tag }) =>
     message,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.method === "OPTIONS", // Skip OPTIONS requests
     handler: (req, res, next, options) => {
       logger.warn(
-        `[RATE:${tag}] IP=${req.ip}  PATH=${req.originalUrl}  LIMIT=${max}/${windowMs}ms`
+        `[RATE:${tag}] IP=${req.ip} PATH=${req.originalUrl} LIMIT=${max}/${windowMs}ms`
       );
       const retryAfterSec = Math.ceil(windowMs / 1000);
       res.set("Retry-After", retryAfterSec);
