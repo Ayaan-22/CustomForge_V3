@@ -10,7 +10,9 @@ import {
   requestReturn,
   processReturn,
   processRefund,
-  getOrders
+  getOrders,
+  markOrderAsPaid,
+  updateOrderStatus
 } from '../controllers/orderController.js';
 import { protect, restrictTo } from '../middleware/authMiddleware.js';
 
@@ -50,5 +52,11 @@ router.route('/:id/refund')
 
 router.route('/:id/process-return')
   .put(processReturn); // Process return request
+
+router.route('/:id/mark-paid')
+  .put(markOrderAsPaid); // Mark as paid
+
+router.route('/:id/status')
+  .put(updateOrderStatus); // Update order status
 
 export default router;

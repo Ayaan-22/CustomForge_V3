@@ -382,3 +382,65 @@ export const getOrders = asyncHandler(async (req, res) => {
     data: orders,
   });
 });
+
+/**
+ * @desc    Mark order as paid
+ * @route   PUT /api/orders/:id/mark-paid
+ * @access  Private/Admin
+ */
+export const markOrderAsPaid = asyncHandler(async (req, res, next) => {
+  const order = await Order.findById(req.params.id);
+
+  if (!order) {
+    return next(new AppError("Order not found", 404));
+  }
+
+  if (order.isPaid) {
+    return next(new AppError("Order is already marked as paid", 400));
+  }
+
+  order.isPaid = true;
+  order.paidAt = Date.now();
+  order.paymentResult = {
+    status: "manual",
+    updated_time: new Date(),
+    email_address: req.user.email,
+  };
+
+  const updatedOrder = await order.save();
+
+  res.status(200).json({
+    success: true,
+    data: updatedOrder,
+    message: "Order marked as paid",
+  });
+});
+
+/**
+ * @desc    Update order status (Admin only)
+ * @route   PUT /api/orders/:id/status
+ * @access  Private/Admin
+ */
+export const updateOrderStatus = asyncHandler(async (req, res, next) => {
+  const { status } = req.body;
+  const allowedStatuses = ["pending", "processing", "shipped", "delivered", "cancelled", "refunded"];
+
+  if (!allowedStatuses.includes(status)) {
+    return next(new AppError("Invalid status", 400));
+  }
+
+  const order = await Order.findById(req.params.id);
+
+  if (!order) {
+    return next(new AppError("Order not found", 404));
+  }
+
+  order.status = status;
+  const updatedOrder = await order.save();
+
+  res.status(200).json({
+    success: true,
+    data: updatedOrder,
+    message: `Order status updated to ${status}`,
+  });
+});
