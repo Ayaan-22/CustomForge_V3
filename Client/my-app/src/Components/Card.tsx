@@ -103,7 +103,7 @@ const GamingShopComponent: React.FC = () => {
     {
       id: "case-1",
       name: "Phantom X RGB",
-      image: "/placeholder.svg?height=200&width=200",
+      image: "/assets/rtx-4070jpeg.jpeg?height=200&width=200",
       price: 149.99,
       features: [
         "Tempered Glass",
@@ -117,7 +117,7 @@ const GamingShopComponent: React.FC = () => {
     {
       id: "case-2",
       name: "Eclipse Pro",
-      image: "/placeholder.svg?height=200&width=200",
+      image: "/assets/Aurora-Black-RGB.jpg?height=200&width=200",
       price: 129.99,
       features: [
         "Mesh Front Panel",
@@ -130,7 +130,7 @@ const GamingShopComponent: React.FC = () => {
     {
       id: "case-3",
       name: "Stealth Mini ITX",
-      image: "/placeholder.svg?height=200&width=200",
+      image: "/assets/PhantomGamingPC.jpg?height=200&width=200",
       price: 99.99,
       features: [
         "Compact Design",
@@ -149,7 +149,7 @@ const GamingShopComponent: React.FC = () => {
       title: "Summer Gaming Bundle",
       description: "Get a free gaming chair with any PC over $2000",
       discount: "FREE ITEM",
-      image: "/placeholder.svg?height=120&width=120",
+      image: "/assets/PhantomGamingPC.jpg?height=120&width=120",
       code: "SUMMER23",
       expiryDate: "2023-08-31",
     },
@@ -158,7 +158,7 @@ const GamingShopComponent: React.FC = () => {
       title: "Back to School",
       description: "15% off any gaming PC plus free headset",
       discount: "15% OFF",
-      image: "/placeholder.svg?height=120&width=120",
+      image: "/assets/PhantomGamingPC.jpg?height=120&width=120",
       code: "SCHOOL23",
       expiryDate: "2023-09-15",
     },

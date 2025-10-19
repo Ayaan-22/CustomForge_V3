@@ -40,22 +40,22 @@ const CartDes: React.FC = () => {
   const productImages: ProductImage[] = [
     {
       id: 1,
-      src: "/placeholder.svg?height=600&width=600",
+      src: "/assets/stealth-mini-itx.jpg?height=600&width=600",
       alt: "Thunder Furor Case Front View",
     },
     {
       id: 2,
-      src: "/placeholder.svg?height=600&width=600",
+      src: "/assets/stealth-mini-itx.jpg?height=600&width=600",
       alt: "Thunder Furor Case Side View",
     },
     {
       id: 3,
-      src: "/placeholder.svg?height=600&width=600",
+      src: "/assets/PhantomGamingPC.jpg?height=600&width=600",
       alt: "Thunder Furor Case Back View",
     },
     {
       id: 4,
-      src: "/placeholder.svg?height=600&width=600",
+      src: "/assets/PhantomGamingPC.jpg?height=600&width=600",
       alt: "Thunder Furor Case Interior View",
     },
   ];
