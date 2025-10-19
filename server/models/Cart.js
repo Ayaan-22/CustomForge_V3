@@ -70,13 +70,13 @@ cartSchema.pre("save", async function (next) {
     const product = products.find((p) => p._id.equals(item.product));
     
     if (!product) {
-      return next(new Error(`Product ${item.product} not found`));
+      return next(AppError.notFound(`Product ${item.product} not found`));
     }
 
     // Ensure product has enough stock
     if (product.stock < item.quantity) {
       return next(
-        new Error(
+        AppError.badRequest(
           `Insufficient stock for ${product.name}. Only ${product.stock} available`
         )
       );

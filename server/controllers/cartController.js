@@ -5,6 +5,7 @@ import Product from "../models/Product.js";
 import Coupon from "../models/Coupon.js";
 import AppError from "../utils/appError.js";
 import asyncHandler from "express-async-handler";
+import { logger } from "../middleware/logger.js";
 
 /**
  * @desc    Get current user's cart
@@ -12,6 +13,7 @@ import asyncHandler from "express-async-handler";
  * @access  Private
  */
 export const getCart = asyncHandler(async (req, res) => {
+  logger.info("Fetch cart", { userId: req.user.id, route: req.originalUrl, method: req.method });
   const cart = await Cart.findOne({ user: req.user.id })
     .populate("items.product", "name finalPrice image stock")
     .populate("coupon", "code discountType discountValue");
@@ -53,6 +55,7 @@ export const getCart = asyncHandler(async (req, res) => {
       totalAfterDiscount,
     },
   });
+  logger.info("Fetched cart", { userId: req.user.id, items: cart.items.length, totalPrice, discount, totalAfterDiscount });
 });
 
 /**
@@ -61,6 +64,7 @@ export const getCart = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const addToCart = asyncHandler(async (req, res, next) => {
+  logger.info("Add to cart start", { userId: req.user.id, body: req.body });
   const { productId, quantity = 1 } = req.body;
 
   if (quantity < 1 || quantity > 10) {
@@ -116,6 +120,7 @@ export const addToCart = asyncHandler(async (req, res, next) => {
     success: true,
     data: populatedCart,
   });
+  logger.info("Added to cart", { userId: req.user.id, productId, quantity });
 });
 
 /**
@@ -124,6 +129,7 @@ export const addToCart = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const removeFromCart = asyncHandler(async (req, res, next) => {
+  logger.info("Remove from cart start", { userId: req.user.id, productId: req.params.productId });
   const cart = await Cart.findOne({ user: req.user.id });
 
   if (!cart) {
@@ -145,6 +151,7 @@ export const removeFromCart = asyncHandler(async (req, res, next) => {
     success: true,
     data: cart,
   });
+  logger.info("Removed from cart", { userId: req.user.id, productId: req.params.productId });
 });
 
 /**
@@ -153,6 +160,7 @@ export const removeFromCart = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const updateCartItem = asyncHandler(async (req, res, next) => {
+  logger.info("Update cart item start", { userId: req.user.id, productId: req.params.productId, quantity: req.body?.quantity });
   const { quantity } = req.body;
 
   if (quantity < 1 || quantity > 10) {
@@ -191,6 +199,7 @@ export const updateCartItem = asyncHandler(async (req, res, next) => {
     success: true,
     data: cart,
   });
+  logger.info("Updated cart item", { userId: req.user.id, productId: req.params.productId, quantity });
 });
 
 /**
@@ -199,6 +208,7 @@ export const updateCartItem = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const applyCoupon = asyncHandler(async (req, res, next) => {
+  logger.info("Apply coupon start", { userId: req.user.id, couponCode: req.body?.couponCode });
   const { couponCode } = req.body;
 
   const coupon = await Coupon.findOne({
@@ -225,6 +235,7 @@ export const applyCoupon = asyncHandler(async (req, res, next) => {
     success: true,
     message: "Coupon applied successfully",
   });
+  logger.info("Applied coupon", { userId: req.user.id, couponId: coupon._id });
 });
 
 /**
@@ -233,6 +244,7 @@ export const applyCoupon = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const removeCoupon = asyncHandler(async (req, res, next) => {
+  logger.info("Remove coupon start", { userId: req.user.id });
   const cart = await Cart.findOne({ user: req.user.id });
 
   if (!cart) {
@@ -246,6 +258,7 @@ export const removeCoupon = asyncHandler(async (req, res, next) => {
     success: true,
     message: "Coupon removed successfully",
   });
+  logger.info("Removed coupon", { userId: req.user.id });
 });
 
 /**
@@ -254,10 +267,12 @@ export const removeCoupon = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const clearCart = asyncHandler(async (req, res) => {
+  logger.info("Clear cart start", { userId: req.user.id });
   await Cart.findOneAndDelete({ user: req.user.id });
 
   res.status(200).json({
     success: true,
     data: { items: [], totalPrice: 0 },
   });
+  logger.info("Cleared cart", { userId: req.user.id });
 });

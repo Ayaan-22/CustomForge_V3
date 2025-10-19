@@ -2,13 +2,9 @@
 
 import express from 'express';
 import {
-  getAllUsers,
-  getUser,
   getMe,
   updateMe,
   deleteMe,
-  updateUser,
-  deleteUser,
   getWishlist,
   getUserOrders
 } from '../controllers/userController.js';
@@ -37,15 +33,6 @@ router.get('/wishlist', getWishlist);
 // Order history
 router.get('/orders', getUserOrders);
 
-// Admin-only routes
-router.use(restrictTo('admin'));
-
-router.route('/')
-  .get(getAllUsers);
-
-router.route('/:id')
-  .get(getUser)
-  .patch(updateUser)
-  .delete(deleteUser);
+// Admin user management routes moved to /api/v1/admin/users
 
 export default router;

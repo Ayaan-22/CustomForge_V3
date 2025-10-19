@@ -16,16 +16,9 @@ import {
   addToWishlist,
   removeFromWishlist,
   getWishlist,
-
-  // Admin endpoints
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  getProductReviews,
-  deleteProductReview,
 } from "../controllers/productController.js";
 
-import { protect, restrictTo } from "../middleware/authMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -45,12 +38,6 @@ router.get("/category/:category", getProductsByCategory);
 router.get("/:id", getProduct);
 router.get("/:id/related", getRelatedProducts);
 
-// ----------- ADMIN ROUTES -----------
-router.use(protect); // Still need to protect admin routes
-router.use(restrictTo("admin"));
-
-router.post("/", createProduct);
-router.route("/:id").patch(updateProduct).delete(deleteProduct);
-router.route("/:id/reviews").get(getProductReviews).delete(deleteProductReview);
+// Admin routes moved to /api/v1/admin/products
 
 export default router;

@@ -5,7 +5,7 @@ import asyncHandler from "express-async-handler";
 import AppError from "../utils/appError.js";
 import { logger } from "./logger.js";
 import { verify2FAToken } from "../utils/generateToken.js";
-import User from "../models/User.js"; // ✅ Added missing import
+import User from "../models/User.js";
 
 /**
  * Middleware to protect routes (Only authenticated users can access)

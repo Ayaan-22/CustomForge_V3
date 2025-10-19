@@ -5,16 +5,10 @@ import {
   getOrderById,
   getMyOrders,
   getPaymentStatus,
-  updateOrderToDelivered,
   cancelOrder,
-  requestReturn,
-  processReturn,
-  processRefund,
-  getOrders,
-  markOrderAsPaid,
-  updateOrderStatus
+  requestReturn
 } from '../controllers/orderController.js';
-import { protect, restrictTo } from '../middleware/authMiddleware.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -38,25 +32,6 @@ router.route('/:id/cancel')
 router.route('/:id/return')
   .post(requestReturn); // Request return
 
-// Admin only routes
-router.use(restrictTo('admin'));
-
-router.route('/')
-  .get(getOrders); // Get all orders (admin)
-
-router.route('/:id/deliver')
-  .put(updateOrderToDelivered); // Mark as delivered
-
-router.route('/:id/refund')
-  .post(processRefund); // Process refund
-
-router.route('/:id/process-return')
-  .put(processReturn); // Process return request
-
-router.route('/:id/mark-paid')
-  .put(markOrderAsPaid); // Mark as paid
-
-router.route('/:id/status')
-  .put(updateOrderStatus); // Update order status
+// Admin routes moved to /api/v1/admin/orders
 
 export default router;

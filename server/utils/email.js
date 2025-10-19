@@ -5,6 +5,7 @@ import { htmlToText } from "html-to-text";
 import path from "path";
 import { fileURLToPath } from "url";
 import AppError from "./appError.js";
+import { logger } from "../middleware/logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,9 +63,20 @@ export default class Email {
 
       // Create transport and send email
       const transport = this.newTransport();
-      transport.sendMail(mailOptions);
+      await transport.sendMail(mailOptions);
+      logger.info("Email sent", {
+        to: this.to,
+        subject,
+        template,
+      });
     } catch (err) {
-      console.error(`Failed to send email: ${err.message}`);
+      logger.error("Email send failed", {
+        message: err.message,
+        stack: err.stack,
+        to: this.to,
+        subject,
+        template,
+      });
       throw new AppError("Failed to send email", 500, {
         template,
         recipient: this.to,

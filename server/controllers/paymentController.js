@@ -2,6 +2,7 @@
 import Order from "../models/Order.js";
 import User from "../models/User.js";
 import asyncHandler from "express-async-handler";
+import { logger } from "../middleware/logger.js";
 import Stripe from "stripe";
 import AppError from "../utils/appError.js";
 
@@ -58,7 +59,7 @@ export const processPayment = asyncHandler(async (req, res, next) => {
 // Stripe Payment Processor
 async function processStripePayment(order, paymentData, user) {
   if (!paymentData.paymentIntentId) {
-    throw new Error("Stripe payment intent ID required");
+    throw AppError.badRequest("Stripe payment intent ID required");
   }
 
   const paymentIntent = await stripe.paymentIntents.retrieve(
@@ -67,12 +68,12 @@ async function processStripePayment(order, paymentData, user) {
 
   // Verify payment intent matches order
   if (paymentIntent.metadata.orderId !== order._id.toString()) {
-    throw new Error("Payment intent does not match order");
+    throw AppError.badRequest("Payment intent does not match order");
   }
 
   const paidAmount = paymentIntent.amount_received / 100;
   if (Math.abs(paidAmount - order.totalPrice) > 0.01) {
-    throw new Error("Payment amount doesn't match order total");
+    throw AppError.badRequest("Payment amount doesn't match order total");
   }
 
   await order.markAsPaid({
@@ -87,7 +88,7 @@ async function processStripePayment(order, paymentData, user) {
 // PayPal Payment Processor
 async function processPayPalPayment(order, paymentData) {
   if (!paymentData.payer || !paymentData.payer.email_address) {
-    throw new Error("PayPal payment data incomplete");
+    throw AppError.badRequest("PayPal payment data incomplete");
   }
 
   await order.markAsPaid({
@@ -175,7 +176,7 @@ export const createPaymentIntent = asyncHandler(async (req, res, next) => {
  * @route   POST /api/payment/webhook
  * @access  Public
  */
-export const handleWebhook = asyncHandler(async (req, res) => {
+export const handleWebhook = asyncHandler(async (req, res, next) => {
   const sig = req.headers["stripe-signature"];
 
   try {
@@ -191,7 +192,11 @@ export const handleWebhook = asyncHandler(async (req, res) => {
         break;
 
       case "payment_intent.payment_failed":
-        console.error("Payment failed:", event.data.object);
+        logger.warn("Payment failed", {
+          paymentIntent: event.data.object,
+          route: req.originalUrl,
+          method: req.method,
+        });
         break;
 
       case "charge.refunded":
@@ -199,23 +204,28 @@ export const handleWebhook = asyncHandler(async (req, res) => {
         break;
 
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        logger.info("Unhandled Stripe event", { type: event.type });
     }
 
     res.json({ received: true });
   } catch (err) {
-    console.error(`Webhook Error: ${err.message}`);
-    res.status(400).send(`Webhook Error: ${err.message}`);
+    logger.error("Stripe webhook error", {
+      message: err.message,
+      stack: err.stack,
+      route: req.originalUrl,
+      method: req.method,
+    });
+    return next(AppError.badRequest(`Webhook Error: ${err.message}`));
   }
 });
 
 async function handleSuccessfulPayment(paymentIntent) {
   const order = await Order.findById(paymentIntent.metadata.orderId);
-  if (!order) throw new Error("Order not found");
+  if (!order) throw AppError.notFound("Order not found");
 
   const paidAmount = paymentIntent.amount_received / 100;
   if (Math.abs(paidAmount - order.totalPrice) > 0.01) {
-    throw new Error("Amount mismatch");
+    throw AppError.badRequest("Amount mismatch");
   }
 
   await order.markAsPaid({
@@ -231,16 +241,7 @@ async function handleSuccessfulPayment(paymentIntent) {
 async function handleRefund(refundedCharge) {
   const order = await Order.findById(refundedCharge.metadata.orderId);
   if (order) {
-    order.status = "refunded";
-    order.refundedAt = new Date();
-    await order.save();
-
-    // Restore product stock if needed
-    for (const item of order.orderItems) {
-      await Product.findByIdAndUpdate(item.product, {
-        $inc: { stock: item.quantity },
-      });
-    }
+    await order.markAsRefunded();
   }
 }
 

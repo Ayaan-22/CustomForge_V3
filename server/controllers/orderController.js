@@ -4,6 +4,7 @@ import Product from "../models/Product.js";
 import Cart from "../models/Cart.js";
 import AppError from "../utils/appError.js";
 import asyncHandler from "express-async-handler";
+import { logger } from "../middleware/logger.js";
 
 /**
  * @desc    Create new order from the cart
@@ -11,6 +12,7 @@ import asyncHandler from "express-async-handler";
  * @access  Private
  */
 export const createOrder = asyncHandler(async (req, res, next) => {
+  logger.info("Create order start", { userId: req.user._id });
   const {
     shippingAddress,
     paymentMethod = "stripe", // Default to stripe
@@ -112,6 +114,7 @@ export const createOrder = asyncHandler(async (req, res, next) => {
     data: order,
     message: "Order created successfully"
   });
+  logger.info("Order created", { orderId: order._id, userId: req.user._id });
 });
 
 /**
@@ -126,6 +129,7 @@ export const getOrderById = asyncHandler(async (req, res, next) => {
   );
 
   if (!order) {
+    logger.warn("Order not found", { id: req.params.id });
     return next(new AppError("Order not found", 404));
   }
 
@@ -138,6 +142,7 @@ export const getOrderById = asyncHandler(async (req, res, next) => {
     success: true,
     data: order,
   });
+  logger.info("Fetched order", { id: req.params.id, userId: req.user._id });
 });
 
 /**
@@ -149,6 +154,7 @@ export const getPaymentStatus = asyncHandler(async (req, res, next) => {
   const order = await Order.findById(req.params.id);
   
   if (!order) {
+    logger.warn("Order not found for payment status", { id: req.params.id });
     return next(new AppError('Order not found', 404));
   }
 
@@ -162,68 +168,10 @@ export const getPaymentStatus = asyncHandler(async (req, res, next) => {
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentResult?.status
   });
+  logger.info("Fetched payment status", { id: req.params.id, isPaid: order.isPaid });
 });
 
-/**
- * @desc    Update order to delivered
- * @route   PUT /api/orders/:id/deliver
- * @access  Private/Admin
- */
-export const updateOrderToDelivered = asyncHandler(async (req, res, next) => {
-  const order = await Order.findById(req.params.id);
 
-  if (!order) {
-    return next(new AppError("Order not found", 404));
-  }
-
-  if (!order.isPaid) {
-    return next(new AppError("Order must be paid before delivery", 400));
-  }
-
-  order.isDelivered = true;
-  order.deliveredAt = Date.now();
-  order.status = "delivered";
-
-  const updatedOrder = await order.save();
-
-  res.json({
-    success: true,
-    data: updatedOrder,
-  });
-});
-
-/**
- * @desc    Process refund
- * @route   POST /api/orders/:id/refund
- * @access  Private/Admin
- */
-export const processRefund = asyncHandler(async (req, res, next) => {
-  const order = await Order.findById(req.params.id);
-  
-  if (!order) {
-    return next(new AppError('Order not found', 404));
-  }
-
-  if (!order.isPaid) {
-    return next(new AppError('Order is not paid', 400));
-  }
-
-  if (order.status !== 'delivered') {
-    return next(new AppError('Only delivered orders can be refunded', 400));
-  }
-
-  try {
-    await order.processRefund();
-    
-    res.status(200).json({
-      success: true,
-      message: 'Refund processed successfully'
-    });
-    
-  } catch (error) {
-    return next(new AppError(`Refund failed: ${error.message}`, 400));
-  }
-});
 
 /**
  * @desc    Cancel order
@@ -231,6 +179,7 @@ export const processRefund = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const cancelOrder = asyncHandler(async (req, res, next) => {
+  logger.info("Cancel order start", { id: req.params.id, userId: req.user._id });
   const order = await Order.findById(req.params.id);
 
   if (!order) {
@@ -248,6 +197,7 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
       success: true,
       message: "Order cancelled successfully",
     });
+    logger.info("Order cancelled", { id: req.params.id, userId: req.user._id });
   } catch (error) {
     return next(new AppError(error.message, 400));
   }
@@ -259,6 +209,7 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const requestReturn = asyncHandler(async (req, res, next) => {
+  logger.info("Request return start", { id: req.params.id, userId: req.user._id });
   const { reason } = req.body;
   const order = await Order.findById(req.params.id);
 
@@ -300,46 +251,9 @@ export const requestReturn = asyncHandler(async (req, res, next) => {
     success: true,
     message: "Return request submitted",
   });
+  logger.info("Return requested", { id: req.params.id, userId: req.user._id });
 });
 
-/**
- * @desc    Process order return (Admin only)
- * @route   PUT /api/orders/:id/process-return
- * @access  Private/Admin
- */
-export const processReturn = asyncHandler(async (req, res, next) => {
-  const { action, rejectionReason } = req.body;
-  const order = await Order.findById(req.params.id);
-
-  if (!order) {
-    return next(new AppError("Order not found", 404));
-  }
-
-  if (order.status !== 'return_requested') {
-    return next(new AppError("No pending return request for this order", 400));
-  }
-
-  if (action === "approve") {
-    order.status = "refunded";
-    order.refundedAt = new Date();
-    order.returnRequest.status = "approved";
-    order.returnRequest.processedAt = new Date();
-  } else if (action === "reject") {
-    order.status = "delivered"; // Revert to delivered status
-    order.returnRequest.status = "rejected";
-    order.returnRequest.processedAt = new Date();
-    order.returnRequest.rejectionReason = rejectionReason || "Not specified";
-  } else {
-    return next(new AppError("Invalid action", 400));
-  }
-
-  await order.save();
-
-  res.json({
-    success: true,
-    message: `Return request ${action}d`,
-  });
-});
 
 /**
  * @desc    Get logged in user orders
@@ -353,94 +267,8 @@ export const getMyOrders = asyncHandler(async (req, res) => {
     count: orders.length,
     data: orders,
   });
+  logger.info("Fetched my orders", { userId: req.user._id, count: orders.length });
 });
 
-/**
- * @desc    Get all orders (Admin only)
- * @route   GET /api/orders
- * @access  Private/Admin
- */
-export const getOrders = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, status } = req.query;
-  const skip = (page - 1) * limit;
 
-  const query = {};
-  if (status) query.status = status;
 
-  const orders = await Order.find(query)
-    .populate("user", "id name")
-    .skip(skip)
-    .limit(parseInt(limit))
-    .sort("-createdAt");
-
-  const count = await Order.countDocuments(query);
-
-  res.json({
-    success: true,
-    count,
-    pages: Math.ceil(count / limit),
-    data: orders,
-  });
-});
-
-/**
- * @desc    Mark order as paid
- * @route   PUT /api/orders/:id/mark-paid
- * @access  Private/Admin
- */
-export const markOrderAsPaid = asyncHandler(async (req, res, next) => {
-  const order = await Order.findById(req.params.id);
-
-  if (!order) {
-    return next(new AppError("Order not found", 404));
-  }
-
-  if (order.isPaid) {
-    return next(new AppError("Order is already marked as paid", 400));
-  }
-
-  order.isPaid = true;
-  order.paidAt = Date.now();
-  order.paymentResult = {
-    status: "manual",
-    updated_time: new Date(),
-    email_address: req.user.email,
-  };
-
-  const updatedOrder = await order.save();
-
-  res.status(200).json({
-    success: true,
-    data: updatedOrder,
-    message: "Order marked as paid",
-  });
-});
-
-/**
- * @desc    Update order status (Admin only)
- * @route   PUT /api/orders/:id/status
- * @access  Private/Admin
- */
-export const updateOrderStatus = asyncHandler(async (req, res, next) => {
-  const { status } = req.body;
-  const allowedStatuses = ["pending", "processing", "shipped", "delivered", "cancelled", "refunded"];
-
-  if (!allowedStatuses.includes(status)) {
-    return next(new AppError("Invalid status", 400));
-  }
-
-  const order = await Order.findById(req.params.id);
-
-  if (!order) {
-    return next(new AppError("Order not found", 404));
-  }
-
-  order.status = status;
-  const updatedOrder = await order.save();
-
-  res.status(200).json({
-    success: true,
-    data: updatedOrder,
-    message: `Order status updated to ${status}`,
-  });
-});

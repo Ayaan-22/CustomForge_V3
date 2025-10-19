@@ -71,7 +71,7 @@ const connectDB = async () => {
       } else {
         logger.error("[DB] ❌ Maximum retry attempts reached. Exiting...");
         process.exit(1);
-        // Alternatively, throw new Error('MongoDB connection failed after retries');
+        // Alternatively, throw AppError.internal('MongoDB connection failed after retries');
       }
     });
 
@@ -101,7 +101,7 @@ const connectDB = async () => {
     } else {
       logger.error("[DB] ❌ All retry attempts failed. Terminating process...");
       process.exit(1);
-      // Or: throw new Error('MongoDB connection failed after retries');
+      // Or: throw AppError.internal('MongoDB connection failed after retries');
     }
   }
 };

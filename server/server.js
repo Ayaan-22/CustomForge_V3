@@ -21,7 +21,7 @@ import cartRoutes from "./routes/cartRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
-import couponRoutes from "./routes/couponRoutes.js";
+//import couponRoutes from "./routes/couponRoutes.js";
 import emailTestRoutes from "./routes/emailTestRoutes.js";
 
 // Middleware
@@ -93,13 +93,13 @@ app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 
 // API Routes (versioned)
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/users", userRoutes);
-app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/cart", cartRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/payment", paymentRoutes);
-app.use("/api/v1/coupons", couponRoutes);
+//app.use("/api/v1/coupons", couponRoutes);
 app.use("/api/v1/email", emailTestRoutes);
 
 // Health check endpoint

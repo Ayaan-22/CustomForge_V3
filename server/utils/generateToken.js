@@ -1,15 +1,15 @@
 // File: server/utils/generateToken.js
 import jwt from "jsonwebtoken";
+import AppError from "./appError.js";
 import crypto from "crypto";
 import speakeasy from "speakeasy";
 import dotenv from "dotenv";
-import AppError from "./appError.js";
 
 dotenv.config();
 
 // Validate environment variables
 if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET is not defined in environment variables");
+  throw AppError.internal("JWT_SECRET is not defined in environment variables");
 }
 
 // Configuration constants

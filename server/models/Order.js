@@ -1,5 +1,6 @@
 // File: server/models/Order.js
 import mongoose from "mongoose";
+import AppError from "../utils/appError.js";
 
 /**
  * Schema for order items
@@ -195,22 +196,15 @@ orderSchema.pre("save", async function (next) {
 /**
  * Middleware: Restore stock if order is cancelled or refunded
  */
-orderSchema.post("findOneAndUpdate", async function (doc) {
-  if (doc && ["cancelled", "refunded"].includes(doc.status)) {
-    for (const item of doc.orderItems) {
-      await mongoose
-        .model("Product")
-        .findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
-    }
-  }
-});
+// Removed: stock restoration via post-findOneAndUpdate hook.
+// Stock restoration is now handled inside domain methods below for consistency.
 
 /**
  * Method: Mark order as paid
  */
 orderSchema.methods.markAsPaid = async function(paymentResult) {
   if (this.isPaid) {
-    throw new Error("Order is already paid");
+    throw AppError.badRequest("Order is already paid");
   }
 
   this.isPaid = true;
@@ -226,13 +220,29 @@ orderSchema.methods.markAsPaid = async function(paymentResult) {
  */
 orderSchema.methods.processRefund = async function() {
   if (this.status !== 'delivered') {
-    throw new Error('Only delivered orders can be refunded');
+    throw AppError.badRequest('Only delivered orders can be refunded');
   }
-
+  return this.markAsRefunded();
+};
+ 
+/**
+ * Method: Mark order as refunded (no precondition checks)
+ * Also restores product stock.
+ */
+orderSchema.methods.markAsRefunded = async function() {
   this.status = "refunded";
   this.refundedAt = Date.now();
-  this.paymentResult.status = "refunded";
-  
+  if (this.paymentResult) {
+    this.paymentResult.status = "refunded";
+  }
+
+  // Restore stock for all items
+  for (const item of this.orderItems) {
+    await mongoose
+      .model("Product")
+      .findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
+  }
+
   return this.save();
 };
 
@@ -241,14 +251,20 @@ orderSchema.methods.processRefund = async function() {
  */
 orderSchema.methods.cancelOrder = async function() {
   if (this.isPaid) {
-    throw new Error("Paid orders cannot be cancelled - request a refund instead");
+    throw AppError.badRequest("Paid orders cannot be cancelled - request a refund instead");
   }
 
   if (this.status === "delivered") {
-    throw new Error("Delivered orders cannot be cancelled");
+    throw AppError.badRequest("Delivered orders cannot be cancelled");
   }
 
   this.status = "cancelled";
+  // Restore stock on cancellation
+  for (const item of this.orderItems) {
+    await mongoose
+      .model("Product")
+      .findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
+  }
   return this.save();
 };
 

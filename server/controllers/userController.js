@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import asyncHandler from "express-async-handler";
 import AppError from "../utils/appError.js";
+import { logger } from "../middleware/logger.js";
 
 /**
  * Utility: Filter object fields for safe update
@@ -18,20 +19,6 @@ const filterObj = (obj, ...allowedFields) => {
   return newObj;
 };
 
-/**
- * @desc    Get all users
- * @route   GET /api/users
- * @access  Private/Admin
- */
-export const getAllUsers = asyncHandler(async (req, res) => {
-  const users = await User.find().select("-password -twoFactorSecret");
-
-  res.status(200).json({
-    success: true,
-    results: users.length,
-    data: users,
-  });
-});
 
 /**
  * @desc    Get logged-in user's profile
@@ -47,27 +34,9 @@ export const getMe = asyncHandler(async (req, res) => {
     success: true,
     data: user,
   });
+  logger.info("Fetched profile", { userId: req.user.id });
 });
 
-/**
- * @desc    Get user by ID
- * @route   GET /api/users/:id
- * @access  Private/Admin
- */
-export const getUser = asyncHandler(async (req, res, next) => {
-  const user = await User.findById(req.params.id).select(
-    "-password -twoFactorSecret"
-  );
-
-  if (!user) {
-    return next(new AppError("User not found", 404));
-  }
-
-  res.status(200).json({
-    success: true,
-    data: user,
-  });
-});
 
 /**
  * @desc    Update current user's profile
@@ -75,6 +44,7 @@ export const getUser = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const updateMe = asyncHandler(async (req, res, next) => {
+  logger.info("Update self start", { userId: req.user.id, bodyKeys: Object.keys(req.body || {}) });
   if (req.body.password || req.body.passwordConfirm) {
     return next(new AppError("This route is not for password updates", 400));
   }
@@ -97,6 +67,7 @@ export const updateMe = asyncHandler(async (req, res, next) => {
     success: true,
     data: updatedUser,
   });
+  logger.info("Updated self", { userId: req.user.id });
 });
 
 /**
@@ -105,56 +76,17 @@ export const updateMe = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const deleteMe = asyncHandler(async (req, res) => {
+  logger.info("Deactivate self start", { userId: req.user.id });
   await User.findByIdAndUpdate(req.user.id, { active: false });
 
   res.status(204).json({
     success: true,
     data: null,
   });
+  logger.info("Deactivated self", { userId: req.user.id });
 });
 
-/**
- * @desc    Update user by Admin
- * @route   PATCH /api/users/:id
- * @access  Private/Admin
- */
-export const updateUser = asyncHandler(async (req, res, next) => {
-  if (req.body.password) {
-    return next(new AppError("Use the proper route for password updates", 400));
-  }
 
-  const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  }).select("-password -twoFactorSecret");
-
-  if (!updatedUser) {
-    return next(new AppError("User not found", 404));
-  }
-
-  res.status(200).json({
-    success: true,
-    data: updatedUser,
-  });
-});
-
-/**
- * @desc    Delete user by Admin
- * @route   DELETE /api/users/:id
- * @access  Private/Admin
- */
-export const deleteUser = asyncHandler(async (req, res, next) => {
-  const user = await User.findByIdAndDelete(req.params.id);
-
-  if (!user) {
-    return next(new AppError("User not found", 404));
-  }
-
-  res.status(204).json({
-    success: true,
-    data: null,
-  });
-});
 
 /**
  * @desc    Get user's wishlist
@@ -171,7 +103,8 @@ export const getWishlist = asyncHandler(async (req, res) => {
     success: true,
     results: user.wishlist.length,
     data: user.wishlist,
-  });
+  }); 
+  logger.info("Fetched user wishlist", { userId: req.user.id, results: user.wishlist.length });
 });
 
 /**
@@ -189,4 +122,5 @@ export const getUserOrders = asyncHandler(async (req, res) => {
     results: orders.length,
     data: orders,
   });
+  logger.info("Fetched user orders", { userId: req.user.id, results: orders.length });
 });

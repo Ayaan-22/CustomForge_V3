@@ -6,6 +6,7 @@ import asyncHandler from "express-async-handler";
 import User from "../models/User.js";
 import Review from "../models/Review.js";
 import Order from "../models/Order.js";
+import { logger } from "../middleware/logger.js";
 
 /**
  * @desc    Public Product Controllers
@@ -17,6 +18,7 @@ import Order from "../models/Order.js";
  * @access  Public
  */
 export const getAllProducts = asyncHandler(async (req, res) => {
+  logger.info("Fetching products", { route: req.originalUrl, method: req.method, query: req.query });
   // Execute query with advanced features
   const features = new APIFeatures(Product.find(), req.query)
     .filter()
@@ -40,6 +42,7 @@ export const getAllProducts = asyncHandler(async (req, res) => {
     results: products.length,
     data: products,
   });
+  logger.info("Fetched products", { count, results: products.length });
 });
 
 /**
@@ -58,6 +61,7 @@ export const getProduct = asyncHandler(async (req, res, next) => {
   });
 
   if (!product) {
+    logger.warn("Product not found", { id: req.params.id });
     return next(new AppError("No product found with that ID", 404));
   }
 
@@ -65,6 +69,7 @@ export const getProduct = asyncHandler(async (req, res, next) => {
     success: true,
     data: product,
   });
+  logger.info("Fetched product", { id: req.params.id });
 });
 
 /**
@@ -91,6 +96,7 @@ export const getTopProducts = asyncHandler(async (req, res) => {
 export const getRelatedProducts = asyncHandler(async (req, res, next) => {
   const product = await Product.findById(req.params.id);
   if (!product) {
+    logger.warn("Product not found (related)", { id: req.params.id });
     return next(new AppError("No product found with that ID", 404));
   }
 
@@ -103,6 +109,7 @@ export const getRelatedProducts = asyncHandler(async (req, res, next) => {
     success: true,
     data: relatedProducts,
   });
+  logger.info("Fetched related products", { id: req.params.id, results: relatedProducts.length });
 });
 
 /**
@@ -186,6 +193,7 @@ export const getProductsByCategory = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const createProductReview = asyncHandler(async (req, res, next) => {
+  logger.info("Create review start", { productId: req.params.id, userId: req.user?.id });
   const { rating, comment, title } = req.body;
 
   if (!rating || !comment || !title) {
@@ -205,6 +213,7 @@ export const createProductReview = asyncHandler(async (req, res, next) => {
   });
 
   if (existingReview) {
+    logger.warn("Duplicate review attempt", { productId: req.params.id, userId: req.user?.id });
     return next(new AppError("Product already reviewed", 400));
   }
 
@@ -232,6 +241,7 @@ export const createProductReview = asyncHandler(async (req, res, next) => {
     message: "Review added",
     data: review
   });
+  logger.info("Review created", { productId: req.params.id, reviewId: review._id, userId: req.user?.id });
 });
 
 /**
@@ -243,6 +253,7 @@ export const addToWishlist = asyncHandler(async (req, res, next) => {
   const product = await Product.findById(req.params.id);
 
   if (!product) {
+    logger.warn("Wishlist add product not found", { id: req.params.id, userId: req.user?.id });
     return next(new AppError("No product found with that ID", 404));
   }
 
@@ -254,6 +265,7 @@ export const addToWishlist = asyncHandler(async (req, res, next) => {
     success: true,
     message: "Product added to wishlist",
   });
+  logger.info("Wishlist added", { productId: req.params.id, userId: req.user?.id });
 });
 
 /**
@@ -270,6 +282,7 @@ export const removeFromWishlist = asyncHandler(async (req, res, next) => {
     success: true,
     message: "Product removed from wishlist",
   });
+  logger.info("Wishlist removed", { productId: req.params.id, userId: req.user?.id });
 });
 
 /**
@@ -295,289 +308,6 @@ export const getWishlist = asyncHandler(async (req, res) => {
     results: user.wishlist.length,
     data: user.wishlist,
   });
+  logger.info("Fetched wishlist", { userId: req.user?.id, results: user.wishlist.length });
 });
 
-/**
- * @desc    Create new product
- * @route   POST /api/products
- * @access  Private/Admin
- */
-export const createProduct = asyncHandler(async (req, res, next) => {
-  const {
-    name,
-    category,
-    brand,
-    originalPrice,
-    discountPercentage = 0,
-    stock = 0,
-    images,
-    description,
-    features,
-    specifications,
-    sku,
-    warranty = "1 year limited warranty",
-    weight,
-    dimensions
-  } = req.body;
-
-  // Validate required fields
-  const requiredFields = [
-    { field: name, message: "Product name is required" },
-    { field: category, message: "Category is required" },
-    { field: brand, message: "Brand is required" },
-    { field: originalPrice, message: "Original price is required" },
-    { field: images, message: "At least one image is required" },
-    { field: description, message: "Description is required" },
-    { field: sku, message: "SKU is required" }
-  ];
-
-  for (const { field, message } of requiredFields) {
-    if (!field || (Array.isArray(field) && field.length === 0)) {
-      return next(new AppError(message, 400));
-    }
-  }
-
-  // Validate discount percentage
-  if (discountPercentage < 0 || discountPercentage > 100) {
-    return next(new AppError("Discount must be between 0 and 100%", 400));
-  }
-
-  // Validate image URLs
-  const imageRegex = /\.(jpg|jpeg|png|webp)$/i;
-  for (const image of images) {
-    if (!imageRegex.test(image)) {
-      return next(new AppError(`Invalid image URL: ${image}`, 400));
-    }
-  }
-
-  // Validate specifications if provided
-  if (specifications && specifications.length > 0) {
-    for (const spec of specifications) {
-      if (!spec.key || !spec.value) {
-        return next(new AppError("Specifications must have both key and value", 400));
-      }
-    }
-  }
-
-  // Calculate final price
-  const finalPrice = parseFloat(
-    (originalPrice - (originalPrice * discountPercentage / 100)).toFixed(2)
-  );
-
-  // Create product
-  const product = await Product.create({
-    name,
-    category,
-    brand,
-    specifications: specifications || [],
-    originalPrice,
-    discountPercentage,
-    finalPrice,
-    stock,
-    availability: stock > 0 ? "In Stock" : "Out of Stock",
-    images,
-    description,
-    features: features || [],
-    sku,
-    warranty,
-    weight,
-    dimensions,
-    ratings: { average: 0, totalReviews: 0 }, // Initialize ratings
-    isActive: true,
-    isFeatured: false,
-    salesCount: 0,
-    user: req.user.id
-  });
-
-  res.status(201).json({
-    success: true,
-    data: product
-  });
-});
-
-/**
- * @desc    Update product
- * @route   PATCH /api/products/:id
- * @access  Private/Admin
- */
-export const updateProduct = asyncHandler(async (req, res, next) => {
-  const product = await Product.findById(req.params.id);
-
-  if (!product) {
-    return next(new AppError("No product found with that ID", 404));
-  }
-
-  // Create update object with only allowed fields
-  const updateData = {};
-  const allowedFields = [
-    'name', 'category', 'brand', 'originalPrice', 'discountPercentage', 
-    'stock', 'images', 'description', 'features', 'specifications',
-    'sku', 'warranty', 'weight', 'dimensions', 'isActive', 'isFeatured'
-  ];
-
-  // Copy allowed fields from req.body to updateData
-  allowedFields.forEach(field => {
-    if (req.body[field] !== undefined) {
-      updateData[field] = req.body[field];
-    }
-  });
-
-  // Validate images if being updated
-  if (updateData.images) {
-    const imageRegex = /\.(jpg|jpeg|png|webp)$/i;
-    for (const image of updateData.images) {
-      if (!imageRegex.test(image)) {
-        return next(new AppError(`Invalid image URL: ${image}`, 400));
-      }
-    }
-    if (updateData.images.length === 0) {
-      return next(new AppError("At least one image is required", 400));
-    }
-  }
-
-  // Validate specifications if being updated
-  if (updateData.specifications) {
-    for (const spec of updateData.specifications) {
-      if (!spec.key || !spec.value) {
-        return next(new AppError("Specifications must have both key and value", 400));
-      }
-    }
-  }
-
-  // Handle price updates
-  if (updateData.originalPrice || updateData.discountPercentage !== undefined) {
-    const originalPrice = updateData.originalPrice || product.originalPrice;
-    const discountPercentage = updateData.discountPercentage !== undefined 
-      ? updateData.discountPercentage 
-      : product.discountPercentage;
-    
-    if (discountPercentage < 0 || discountPercentage > 100) {
-      return next(new AppError("Discount must be between 0 and 100%", 400));
-    }
-    
-    updateData.finalPrice = parseFloat(
-      (originalPrice - (originalPrice * discountPercentage / 100)).toFixed(2)
-    );
-  }
-
-  // Handle stock updates
-  if (updateData.stock !== undefined) {
-    if (updateData.stock < 0) {
-      return next(new AppError("Stock cannot be negative", 400));
-    }
-    updateData.availability = updateData.stock > 0 ? "In Stock" : "Out of Stock";
-  }
-
-  // Validate category if being updated
-  if (updateData.category) {
-    const validCategories = [
-      "Prebuilt PCs", "CPU", "GPU", "Motherboard", "RAM", "Storage", 
-      "Power Supply", "Cooler", "Case", "OS", "Networking", "RGB",
-      "CaptureCard", "Monitor", "Keyboard", "Mouse", "Mousepad",
-      "Headset", "Speakers", "Controller", "ExternalStorage", "VR",
-      "StreamingGear", "Microphone", "Webcam", "GamingChair",
-      "GamingDesk", "SoundCard", "Cables", "GamingLaptop", "Games",
-      "PCGames", "ConsoleGames", "VRGames"
-    ];
-    
-    if (!validCategories.includes(updateData.category)) {
-      return next(new AppError("Invalid product category", 400));
-    }
-  }
-
-  // Validate SKU if being updated
-  if (updateData.sku) {
-    const existingProduct = await Product.findOne({ sku: updateData.sku });
-    if (existingProduct && existingProduct._id.toString() !== req.params.id) {
-      return next(new AppError("SKU must be unique", 400));
-    }
-  }
-
-  const updatedProduct = await Product.findByIdAndUpdate(
-    req.params.id,
-    updateData,
-    { 
-      new: true,
-      runValidators: true
-    }
-  );
-
-  res.status(200).json({
-    success: true,
-    data: updatedProduct
-  });
-});
-
-/**
- * @desc    Delete product
- * @route   DELETE /api/products/:id
- * @access  Private/Admin
- */
-export const deleteProduct = asyncHandler(async (req, res, next) => {
-  const product = await Product.findById(req.params.id);
-
-  if (!product) {
-    return next(new AppError("No product found with that ID", 404));
-  }
-
-  await product.deleteOne();
-
-  res.status(204).json({
-    success: true,
-    data: null
-  });
-});
-
-/**
- * @desc    Get all reviews of a product (admin only)
- * @route   GET /api/products/:id/reviews
- * @access  Private/Admin
- */
-export const getProductReviews = asyncHandler(async (req, res, next) => {
-  const reviews = await Review.find({ product: req.params.id })
-    .populate({
-      path: "user",
-      select: "name email avatar",
-    })
-    .sort({ createdAt: -1 });
-
-  res.status(200).json({
-    success: true,
-    count: reviews.length,
-    data: reviews,
-  });
-});
-
-/**
- * @desc    Delete a review from a product (admin only)
- * @route   DELETE /api/products/:productId/reviews/:reviewId
- * @access  Private/Admin
- */
-export const deleteProductReview = asyncHandler(async (req, res, next) => {
-  const { productId, reviewId } = req.params;
-
-  const product = await Product.findById(productId);
-  if (!product) {
-    return next(new AppError("No product found with that ID", 404));
-  }
-
-  const reviewIndex = product.reviews.findIndex(
-    (r) => r._id.toString() === reviewId
-  );
-  if (reviewIndex === -1) {
-    return next(new AppError("No review found with that ID", 404));
-  }
-
-  product.reviews.splice(reviewIndex, 1);
-  product.ratings.totalReviews = product.reviews.length;
-  product.ratings.average =
-    product.reviews.reduce((acc, r) => acc + r.rating, 0) /
-      product.ratings.totalReviews || 0;
-
-  await product.save();
-
-  res.status(200).json({
-    success: true,
-    message: "Review deleted",
-  });
-});

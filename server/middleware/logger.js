@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
+import { v4 as uuidv4 } from "uuid";
 
 dotenv.config();
 
@@ -98,27 +99,53 @@ const logger = winston.createLogger({
   ],
 });
 
+// Helper to mask sensitive fields in request body
+const maskSensitive = (body) => {
+  if (!body || typeof body !== "object") return body;
+  const masked = { ...body };
+  if (masked.password) masked.password = "***";
+  return masked;
+};
+
 // Request logging middleware
 const requestLogger = (req, res, next) => {
-  // Ignore static asset requests like favicon
+  req.requestId = uuidv4();
+  req.startTime = Date.now();
+
   if (req.originalUrl !== "/favicon.ico") {
     const { method, originalUrl, ip } = req;
     const userId = req.user?._id || "anonymous";
 
     logger.info("HTTP Request", {
+      requestId: req.requestId,
       route: originalUrl,
       method,
       ip,
       userId,
       userAgent: req.get("User-Agent"),
+      body: maskSensitive(req.body),
     });
   }
+
+  // Response logging
+  res.on("finish", () => {
+    logger.info("HTTP Response", {
+      requestId: req.requestId,
+      route: req.originalUrl,
+      method: req.method,
+      status: res.statusCode,
+      responseTime: Date.now() - req.startTime,
+      userId: req.user?._id || "anonymous",
+    });
+  });
+
   next();
 };
 
 // Error logging middleware
 const errorLogger = (err, req, res, next) => {
   logger.error("HTTP Error", {
+    requestId: req.requestId || "N/A",
     message: err.message,
     stack: err.stack,
     route: req.originalUrl,

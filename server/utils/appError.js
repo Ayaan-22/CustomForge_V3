@@ -70,6 +70,14 @@ export default class AppError extends Error {
     return new AppError(message, 409, details, true, code);
   }
 
+  static tooManyRequests(
+    message = "Too Many Requests",
+    details = null,
+    code = null
+  ) {
+    return new AppError(message, 429, details, true, code);
+  }
+
   static internal(
     message = "Internal Server Error",
     details = null,

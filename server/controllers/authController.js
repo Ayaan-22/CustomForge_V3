@@ -14,6 +14,7 @@ import asyncHandler from "express-async-handler";
 import AppError from "../utils/appError.js";
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
+import { logger } from "../middleware/logger.js";
 
 /**
  * Rate limiting for login
@@ -49,6 +50,9 @@ const createSendToken = (user, statusCode, res) => {
     token,
     data: { user },
   });
+  try {
+    logger.info("Auth token issued", { userId: user._id, role: user.role });
+  } catch {}
 };
 
 /**
@@ -57,6 +61,7 @@ const createSendToken = (user, statusCode, res) => {
  * @access  Public
  */
 export const signup = asyncHandler(async (req, res, next) => {
+  logger.info("Signup start", { email: req.body?.email });
   const { name, email, password, passwordConfirm } = req.body;
 
   if (password !== passwordConfirm) {
@@ -74,6 +79,7 @@ export const signup = asyncHandler(async (req, res, next) => {
     newUser.emailVerificationToken = undefined;
     newUser.emailVerificationExpires = undefined;
     await newUser.save({ validateBeforeSave: false });
+    logger.error("Signup email error", { message: err.message, stack: err.stack, userId: newUser._id });
     return next(new AppError("Error sending verification email", 500));
   }
 });
@@ -84,6 +90,7 @@ export const signup = asyncHandler(async (req, res, next) => {
  * @access  Public
  */
 export const verifyEmail = asyncHandler(async (req, res, next) => {
+  logger.info("Verify email start");
   const hashedToken = crypto
     .createHash("sha256")
     .update(req.params.token)
@@ -104,6 +111,7 @@ export const verifyEmail = asyncHandler(async (req, res, next) => {
   await user.save();
 
   createSendToken(user, 200, res);
+  logger.info("Email verified", { userId: user._id });
 });
 
 /**
@@ -112,6 +120,7 @@ export const verifyEmail = asyncHandler(async (req, res, next) => {
  * @access  Public
  */
 export const login = asyncHandler(async (req, res, next) => {
+  logger.info("Login attempt", { email: req.body?.email });
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -129,6 +138,7 @@ export const login = asyncHandler(async (req, res, next) => {
   }
 
   createSendToken(user, 200, res);
+  logger.info("Login success", { userId: user._id });
 });
 
 /**
@@ -143,6 +153,7 @@ export const logout = (req, res) => {
   });
 
   res.status(200).json({ status: "success" });
+  try { logger.info("Logout", { userId: req.user?.id }); } catch {}
 };
 
 /**
@@ -151,6 +162,7 @@ export const logout = (req, res) => {
  * @access  Public
  */
 export const forgotPassword = asyncHandler(async (req, res, next) => {
+  logger.info("Forgot password start", { email: req.body?.email });
   const user = await User.findOne({ email: req.body.email });
   if (!user) return next(new AppError("No user with that email", 404));
 
@@ -162,10 +174,12 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
     res
       .status(200)
       .json({ status: "success", message: "Token sent to email!" });
+    logger.info("Password reset token sent", { userId: user._id });
   } catch (err) {
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     await user.save({ validateBeforeSave: false });
+    logger.error("Forgot password email error", { message: err.message, stack: err.stack, userId: user._id });
     return next(new AppError("Error sending email", 500));
   }
 });
@@ -176,6 +190,7 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
  * @access  Public
  */
 export const resetPassword = asyncHandler(async (req, res, next) => {
+  logger.info("Reset password start");
   const hashedToken = crypto
     .createHash("sha256")
     .update(req.params.token)
@@ -195,12 +210,13 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
   }
 
   user.password = req.body.password;
-  user.passwordChangedAt = Date.now(); // ✅ Update passwordChangedAt
+  user.passwordChangedAt = Date.now();
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
   await user.save();
 
   createSendToken(user, 200, res);
+  logger.info("Password reset", { userId: user._id });
 });
 
 /**
@@ -209,6 +225,7 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const updatePassword = asyncHandler(async (req, res, next) => {
+  logger.info("Update password start", { userId: req.user.id });
   const user = await User.findById(req.user.id).select("+password");
 
   if (!(await user.comparePassword(req.body.passwordCurrent))) {
@@ -220,10 +237,11 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
   }
 
   user.password = req.body.password;
-  user.passwordChangedAt = Date.now(); // ✅
+  user.passwordChangedAt = Date.now();
   await user.save();
 
   createSendToken(user, 200, res);
+  logger.info("Password updated", { userId: user._id });
 });
 
 /**
@@ -232,6 +250,7 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const enableTwoFactor = asyncHandler(async (req, res, next) => {
+  logger.info("Enable 2FA start", { userId: req.user.id });
   const secret = generate2FASecret(req.user.email);
   req.user.twoFactorSecret = secret.base32;
   await req.user.save({ validateBeforeSave: false });
@@ -243,6 +262,7 @@ export const enableTwoFactor = asyncHandler(async (req, res, next) => {
       secret: secret.base32,
     },
   });
+  logger.info("2FA secret issued", { userId: req.user.id });
 });
 
 /**
@@ -251,6 +271,7 @@ export const enableTwoFactor = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const disableTwoFactor = asyncHandler(async (req, res, next) => {
+  logger.info("Disable 2FA start", { userId: req.user.id });
   const { token } = req.body;
   const verified = verify2FAToken(req.user.twoFactorSecret, token);
 
@@ -266,6 +287,7 @@ export const disableTwoFactor = asyncHandler(async (req, res, next) => {
     status: "success",
     message: "Two-factor authentication disabled successfully",
   });
+  logger.info("2FA disabled", { userId: req.user.id });
 });
 
 /**
@@ -274,6 +296,7 @@ export const disableTwoFactor = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 export const verifyTwoFactor = asyncHandler(async (req, res, next) => {
+  logger.info("Verify 2FA start", { userId: req.user.id });
   const { token } = req.body;
   const verified = verify2FAToken(req.user.twoFactorSecret, token);
 
@@ -288,4 +311,5 @@ export const verifyTwoFactor = asyncHandler(async (req, res, next) => {
     status: "success",
     message: "Two-factor authentication enabled successfully",
   });
+  logger.info("2FA enabled", { userId: req.user.id });
 });
