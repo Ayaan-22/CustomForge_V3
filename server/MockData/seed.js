@@ -2,6 +2,7 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Product from "../models/Product.js";
+import { logger } from "../middleware/logger.js";
 import connectDB from "../config/db.js";
 import products from "./sampleData.js"; // ✅ Ensure sampleData is a JS file or use import assertions if it's JSON
 
@@ -13,7 +14,7 @@ await connectDB(); // Connect to the database
  */
 const importData = async () => {
   try {
-    console.log("🗑️ Clearing existing product data...");
+    logger.info("Clearing existing product data...");
     await Product.deleteMany(); // ✅ Clear existing data
 
     // ✅ Loop through products to calculate `finalPrice`
@@ -28,11 +29,11 @@ const importData = async () => {
     }));
 
     await Product.insertMany(updatedProducts); // ✅ Insert new data
-    console.log("✅ Sample data imported successfully!");
+    logger.info("Sample data imported successfully");
 
     process.exit(); // ✅ Exit process on success
   } catch (error) {
-    console.error("❌ Error importing data:", error.message);
+    logger.error("Error importing data", { message: error.message, stack: error.stack });
     process.exit(1); // ❌ Exit with failure
   }
 };
