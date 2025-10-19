@@ -147,7 +147,7 @@ export default function CreateProduct() {
         },
       }
 
-      await api.post("/products", productData)
+      await api.post("/admin/products", productData)
       toast({
         title: "Success",
         description: "Product created successfully",

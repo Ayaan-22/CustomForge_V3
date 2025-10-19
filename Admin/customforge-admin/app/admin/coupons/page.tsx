@@ -65,7 +65,7 @@ export default function Coupons() {
 
   const fetchCoupons = async () => {
     try {
-      const data = await api.get("/coupons")
+      const data = await api.get("/admin/coupons")
       setCoupons(data)
     } catch (error) {
       console.error("Error fetching coupons:", error)

@@ -35,7 +35,7 @@ interface Product {
   isActive: boolean
   sku: string
   description?: string
-  specifications?: { [key: string]: string }
+  specifications?: { [key: string]: string } | Array<{ key: string; value: string }>
   features?: string[]
   weight?: number
   dimensions?: {
@@ -140,8 +140,31 @@ export default function EditProduct() {
 
   const fetchProduct = async (id: string) => {
     try {
-      const data = await api.get(`/products/${id}`)
-      setProduct(data)
+      const resp = await api.get(`/products/${id}`)
+      const payload: any = resp?.data ?? resp
+      const p = payload?.data ?? payload
+      const apiProduct = p as any
+
+      // Normalize specifications into an object map for editing
+      let specsObj: { [key: string]: string } = {}
+      if (Array.isArray(apiProduct?.specifications)) {
+        for (const spec of apiProduct.specifications) {
+          if (spec && typeof spec.key === "string") {
+            specsObj[spec.key] = String(spec.value ?? "")
+          }
+        }
+      } else if (apiProduct?.specifications && typeof apiProduct.specifications === "object") {
+        specsObj = apiProduct.specifications as { [key: string]: string }
+      }
+
+      setProduct((prev) => ({
+        ...prev,
+        ...apiProduct,
+        images: Array.isArray(apiProduct?.images) ? apiProduct.images : [],
+        features: Array.isArray(apiProduct?.features) ? apiProduct.features : [],
+        tags: Array.isArray(apiProduct?.tags) ? apiProduct.tags : [],
+        specifications: specsObj,
+      }))
     } catch (error) {
       console.error("Error fetching product:", error)
       toast({
@@ -160,7 +183,7 @@ export default function EditProduct() {
     setSaving(true)
 
     try {
-      await api.put(`/products/${product.id}`, product)
+      await api.put(`/admin/products/${product.id}`, product)
       toast({
         title: "Success",
         description: "Product updated successfully",
@@ -431,7 +454,7 @@ export default function EditProduct() {
             <CardTitle>Product Images</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {product.images.map((image, index) => (
+            {(product.images || []).map((image, index) => (
               <div key={index} className="flex space-x-2">
                 <Input
                   value={image}
@@ -506,7 +529,7 @@ export default function EditProduct() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              {product.features?.map((feature, index) => (
+              {(product.features || []).map((feature, index) => (
                 <Badge key={index} variant="secondary" className="flex items-center space-x-1">
                   <span>{feature}</span>
                   <button type="button" onClick={() => removeFeature(feature)} className="ml-1 hover:text-red-500">
@@ -536,7 +559,7 @@ export default function EditProduct() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              {product.tags?.map((tag, index) => (
+              {(product.tags || []).map((tag, index) => (
                 <Badge key={index} variant="outline" className="flex items-center space-x-1">
                   <span>{tag}</span>
                   <button type="button" onClick={() => removeTag(tag)} className="ml-1 hover:text-red-500">

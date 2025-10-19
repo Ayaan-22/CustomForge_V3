@@ -109,8 +109,9 @@ export default function Orders() {
 
   const fetchOrders = async () => {
     try {
-      const data = await api.get("/orders")
-      setOrders(data)
+      const data = await api.get("/admin/orders")
+      const list = Array.isArray(data) ? data : (data?.data ?? [])
+      setOrders(list)
     } catch (error) {
       console.error("Error fetching orders:", error)
       toast({
@@ -124,7 +125,8 @@ export default function Orders() {
   }
 
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+    const list = Array.isArray(orders) ? orders : []
+    return list.filter((order) => {
       // Search filter
       if (filters.search) {
         const searchTerm = filters.search.toLowerCase()
@@ -164,7 +166,7 @@ export default function Orders() {
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
     try {
-      await api.put(`/orders/${orderId}/status`, { status: newStatus })
+      await api.put(`/admin/orders/${orderId}/status`, { status: newStatus })
       setOrders(orders.map((order) => (order.id === orderId ? { ...order, status: newStatus as any } : order)))
       toast({
         title: "Success",
@@ -182,7 +184,7 @@ export default function Orders() {
 
   const handleMarkAsPaid = async (orderId: string) => {
     try {
-      await api.put(`/orders/${orderId}/mark-paid`)
+      await api.put(`/admin/orders/${orderId}/mark-paid`)
       setOrders(
         orders.map((order) =>
           order.id === orderId ? { ...order, isPaid: true, paidAt: new Date().toISOString() } : order,
@@ -204,7 +206,7 @@ export default function Orders() {
 
   const handleMarkAsDelivered = async (orderId: string) => {
     try {
-      await api.put(`/orders/${orderId}/deliver`)
+      await api.put(`/admin/orders/${orderId}/deliver`)
       setOrders(
         orders.map((order) =>
           order.id === orderId
@@ -229,7 +231,7 @@ export default function Orders() {
   const handleRefund = async (orderId: string) => {
     if (confirm("Are you sure you want to process a refund for this order?")) {
       try {
-        await api.post(`/orders/${orderId}/refund`) // use POST to match backend
+        await api.post(`/admin/orders/${orderId}/refund`) // use POST to match backend
         setOrders(
           orders.map((order) =>
             order.id === orderId

@@ -54,7 +54,7 @@ interface Product {
   isActive: boolean
   sku: string
   description?: string
-  specifications?: { [key: string]: string }
+  specifications?: { [key: string]: string } | Array<{ key: string; value: string }>
   features?: string[]
   weight?: number
   dimensions?: {
@@ -301,7 +301,7 @@ export default function Products() {
   const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this product?")) {
       try {
-        await api.delete(`/products/${id}`)
+        await api.delete(`/admin/products/${id}`)
         setProducts(products.filter((p) => p.id !== id))
         toast({
           title: "Success",
@@ -915,24 +915,36 @@ function ProductDetailsModal({ product }: { product: Product }) {
         )}
 
         {/* Specifications */}
-        {product.specifications && Object.keys(product.specifications).length > 0 && (
+        {product.specifications && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Technical Specifications</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(product.specifications).map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
-                  >
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-300 capitalize">
-                      {key.replace(/([A-Z])/g, " $1").trim()}
-                    </span>
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{value}</span>
-                  </div>
-                ))}
+                {Array.isArray(product.specifications)
+                  ? product.specifications.map((spec, idx) => (
+                      <div
+                        key={`${spec.key}-${idx}`}
+                        className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                      >
+                        <span className="text-sm font-medium text-gray-600 dark:text-gray-300 capitalize">
+                          {spec.key.replace(/([A-Z])/g, " $1").trim()}
+                        </span>
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{spec.value}</span>
+                      </div>
+                    ))
+                  : Object.entries(product.specifications as { [key: string]: string }).map(([key, value]) => (
+                      <div
+                        key={key}
+                        className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                      >
+                        <span className="text-sm font-medium text-gray-600 dark:text-gray-300 capitalize">
+                          {key.replace(/([A-Z])/g, " $1").trim()}
+                        </span>
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{value}</span>
+                      </div>
+                    ))}
               </div>
             </CardContent>
           </Card>
