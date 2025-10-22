@@ -51,7 +51,6 @@ const cartSchema = new mongoose.Schema(
 );
 
 // Indexes
-cartSchema.index({ user: 1 });
 cartSchema.index({ "items.product": 1 });
 
 /**

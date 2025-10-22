@@ -12,13 +12,11 @@ if (!process.env.MONGO_URI) {
   process.exit(1);
 }
 
-// Global mongoose config (optional for Mongoose v7+)
+// Global mongoose config
 mongoose.set("strictQuery", true);
 
 // Connection configuration
 const DB_OPTIONS = {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
   serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 45000,
   maxPoolSize: 50,
@@ -71,7 +69,6 @@ const connectDB = async () => {
       } else {
         logger.error("[DB] ❌ Maximum retry attempts reached. Exiting...");
         process.exit(1);
-        // Alternatively, throw AppError.internal('MongoDB connection failed after retries');
       }
     });
 
@@ -101,7 +98,6 @@ const connectDB = async () => {
     } else {
       logger.error("[DB] ❌ All retry attempts failed. Terminating process...");
       process.exit(1);
-      // Or: throw AppError.internal('MongoDB connection failed after retries');
     }
   }
 };
