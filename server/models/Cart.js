@@ -33,7 +33,10 @@ const cartSchema = new mongoose.Schema(
       required: [true, "Cart must belong to a user"],
       unique: true,
     },
-    items: [cartItemSchema],
+    items: {
+      type: [cartItemSchema],
+      default: [],
+    },
     coupon: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Coupon",
@@ -54,68 +57,57 @@ const cartSchema = new mongoose.Schema(
 cartSchema.index({ "items.product": 1 });
 
 /**
- * Middleware: Validate stock before saving
+ * Middleware: Validate stock and quantities before saving
+ * - This prevents saving carts with invalid quantities or quantities > stock.
+ * - Uses a single query to fetch products for performance.
  */
 cartSchema.pre("save", async function (next) {
-  if (!this.isModified("items")) return next();
+  try {
+    // Only validate when items changed
+    if (!this.isModified("items")) return next();
 
-  const productIds = this.items.map((item) => item.product);
-  const products = await mongoose
-    .model("Product")
-    .find({ _id: { $in: productIds } });
+    if (!Array.isArray(this.items)) return next();
 
-  // Loop through items and ensure stock is validated
-  for (const item of this.items) {
-    const product = products.find((p) => p._id.equals(item.product));
-    
-    if (!product) {
-      return next(AppError.notFound(`Product ${item.product} not found`));
+    // Collect product ids and ensure unique ids in query
+    const productIds = [...new Set(this.items.map((i) => i.product))];
+
+    if (productIds.length === 0) {
+      this.lastUpdated = Date.now();
+      return next();
     }
 
-    // Ensure product has enough stock
-    if (product.stock < item.quantity) {
-      return next(
-        AppError.badRequest(
-          `Insufficient stock for ${product.name}. Only ${product.stock} available`
-        )
-      );
+    // Fetch required products in one query
+    const products = await mongoose.model("Product").find({ _id: { $in: productIds } }).select("stock name");
+
+    // Build a map for quick lookup
+    const productMap = new Map(products.map((p) => [p._id.toString(), p]));
+
+    // Validate each item
+    for (const item of this.items) {
+      // quantity range validated by schema, but double-check
+      if (typeof item.quantity !== "number" || item.quantity < 1 || item.quantity > 10) {
+        return next(new Error("Quantity must be a number between 1 and 10"));
+      }
+
+      const prod = productMap.get(item.product.toString());
+      if (!prod) {
+        return next(new Error(`Product ${item.product} not found`));
+      }
+
+      if (prod.stock < item.quantity) {
+        return next(new Error(`Insufficient stock for ${prod.name}. Only ${prod.stock} available`));
+      }
     }
+
+    this.lastUpdated = Date.now();
+    return next();
+  } catch (err) {
+    return next(err);
   }
-
-  // Update lastUpdated timestamp
-  this.lastUpdated = Date.now();
-  next();
 });
 
-/**
- * Virtual: Calculate subtotal (without discount)
- */
-cartSchema.virtual("subtotal").get(function () {
-  return this.items.reduce(
-    async (total, item) => {
-      const product = await mongoose.model("Product").findById(item.product);
-      return total + product.finalPrice * item.quantity;
-    },
-    0
-  );
-});
-
-/**
- * Virtual: Calculate total after discount
- */
-cartSchema.virtual("total").get(function () {
-  let total = this.subtotal;
-
-  if (this.coupon?.discountType && this.coupon?.discountValue != null) {
-    if (this.coupon.discountType === "percentage") {
-      total -= total * (this.coupon.discountValue / 100);
-    } else {
-      total -= this.coupon.discountValue;
-    }
-  }
-
-  return Math.max(0, total);
-});
+// Note: Removed async virtuals (subtotal/total) because virtual getters cannot be async.
+// Totals should be computed at controller/service level where product prices are available.
 
 const Cart = mongoose.model("Cart", cartSchema);
 export default Cart;

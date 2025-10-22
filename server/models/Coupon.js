@@ -41,6 +41,7 @@ const couponSchema = new mongoose.Schema({
   minPurchase: {
     type: Number,
     min: [0, "Minimum purchase cannot be negative"],
+    default: 0,
   },
   maxDiscount: {
     type: Number,
@@ -60,9 +61,10 @@ const couponSchema = new mongoose.Schema({
 couponSchema.index({ code: 1, validFrom: 1, validTo: 1 });
 
 /**
- * Static: Validate coupon
+ * Static: Find valid coupon by code (returns coupon document or null)
  */
 couponSchema.statics.isValidCoupon = async function (code) {
+  if (!code) return null;
   const coupon = await this.findOne({
     code,
     validFrom: { $lte: Date.now() },
