@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["user", "publisher", "admin"],
+      enum: ["user", "admin"],
       default: "user",
     },
     avatar: {
@@ -43,7 +43,7 @@ const userSchema = new mongoose.Schema(
     },
     isEmailVerified: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     emailVerificationToken: String,
     emailVerificationExpires: Date,

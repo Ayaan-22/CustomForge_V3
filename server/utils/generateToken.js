@@ -4,6 +4,7 @@ import AppError from "./appError.js";
 import crypto from "crypto";
 import speakeasy from "speakeasy";
 import dotenv from "dotenv";
+import User from "../models/User.js";
 
 dotenv.config();
 
@@ -55,24 +56,57 @@ export const verifyJWT = (token) => {
   }
 };
 
-// Email Verification Token
-export const generateEmailVerificationToken = () => {
+const generateGenericToken = (expiryMs) => {
   const token = crypto.randomBytes(32).toString("hex");
   return {
     token,
     hashedToken: crypto.createHash("sha256").update(token).digest("hex"),
-    expires: Date.now() + TOKEN_EXPIRY.EMAIL_VERIFICATION,
+    expires: Date.now() + expiryMs,
   };
 };
 
-// Password Reset Token
-export const generatePasswordResetToken = () => {
-  const token = crypto.randomBytes(32).toString("hex");
-  return {
+export const generateEmailVerificationToken = () =>
+  generateGenericToken(TOKEN_EXPIRY.EMAIL_VERIFICATION);
+
+export const generatePasswordResetToken = () =>
+  generateGenericToken(TOKEN_EXPIRY.PASSWORD_RESET);
+
+// Token Hashing Utility
+export const hashToken = (token) => {
+  return crypto.createHash("sha256").update(token).digest("hex");
+};
+
+// Token Verification Utility
+export const verifyTokenAndFindUser = async (token, tokenField, expiresField) => {
+  const hashedToken = hashToken(token);
+  
+  const user = await User.findOne({
+    [tokenField]: hashedToken,
+    [expiresField]: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    throw new AppError("Token is invalid or has expired", 400);
+  }
+
+  return user;
+};
+
+// Specific token verification functions
+export const verifyEmailToken = async (token) => {
+  return await verifyTokenAndFindUser(
     token,
-    hashedToken: crypto.createHash("sha256").update(token).digest("hex"),
-    expires: Date.now() + TOKEN_EXPIRY.PASSWORD_RESET,
-  };
+    "emailVerificationToken",
+    "emailVerificationExpires"
+  );
+};
+
+export const verifyPasswordResetToken = async (token) => {
+  return await verifyTokenAndFindUser(
+    token,
+    "passwordResetToken",
+    "passwordResetExpires"
+  );
 };
 
 // Two-Factor Authentication
@@ -127,4 +161,8 @@ export default {
   generateTokenPair,
   assignEmailVerificationToUser,
   assignPasswordResetToUser,
+  hashToken,
+  verifyTokenAndFindUser,
+  verifyEmailToken,
+  verifyPasswordResetToken,
 };

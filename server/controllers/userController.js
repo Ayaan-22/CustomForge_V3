@@ -19,7 +19,6 @@ const filterObj = (obj, ...allowedFields) => {
   return newObj;
 };
 
-
 /**
  * @desc    Get logged-in user's profile
  * @route   GET /api/users/me
@@ -37,7 +36,6 @@ export const getMe = asyncHandler(async (req, res) => {
   logger.info("Fetched profile", { userId: req.user.id });
 });
 
-
 /**
  * @desc    Update current user's profile
  * @route   PATCH /api/users/me
@@ -45,6 +43,7 @@ export const getMe = asyncHandler(async (req, res) => {
  */
 export const updateMe = asyncHandler(async (req, res, next) => {
   logger.info("Update self start", { userId: req.user.id, bodyKeys: Object.keys(req.body || {}) });
+  
   if (req.body.password || req.body.passwordConfirm) {
     return next(new AppError("This route is not for password updates", 400));
   }
@@ -85,8 +84,6 @@ export const deleteMe = asyncHandler(async (req, res) => {
   });
   logger.info("Deactivated self", { userId: req.user.id });
 });
-
-
 
 /**
  * @desc    Get user's wishlist

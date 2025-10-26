@@ -2,18 +2,18 @@
 
 import {
   signToken,
-  verifyJWT,
   assignEmailVerificationToUser,
   assignPasswordResetToUser,
   generate2FASecret,
   verify2FAToken,
+  verifyEmailToken,
+  verifyPasswordResetToken,
 } from "../utils/generateToken.js";
 import User from "../models/User.js";
 import Email from "../utils/email.js";
 import asyncHandler from "express-async-handler";
 import AppError from "../utils/appError.js";
 import rateLimit from "express-rate-limit";
-import crypto from "crypto";
 import { logger } from "../middleware/logger.js";
 
 /**
@@ -37,22 +37,47 @@ const cookieOptions = {
   sameSite: "strict",
 };
 
+// Auth Utility Functions
+const validatePasswordConfirm = (password, passwordConfirm) => {
+  if (password !== passwordConfirm) {
+    throw new AppError("Passwords do not match", 400);
+  }
+};
+
+const getUserWithPassword = async (email) => {
+  return await User.findOne({ email }).select("+password");
+};
+
+const handleEmailError = async (user, tokenFields, error, next, logContext) => {
+  tokenFields.forEach(field => {
+    user[field] = undefined;
+  });
+  
+  await user.save({ validateBeforeSave: false });
+  
+  logger.error(`Email error in ${logContext}`, { 
+    message: error.message, 
+    stack: error.stack, 
+    userId: user._id 
+  });
+  
+  return next(new AppError("Error sending email", 500));
+};
+
 /**
  * Utility: Create and send token with cookie
  */
 const createSendToken = (user, statusCode, res) => {
   const token = signToken(user._id, user.role);
   res.cookie("jwt", token, cookieOptions);
-  user.password = undefined; // Hide password
+  user.password = undefined;
 
   res.status(statusCode).json({
     status: "success",
     token,
     data: { user },
   });
-  try {
-    logger.info("Auth token issued", { userId: user._id, role: user.role });
-  } catch {}
+  logger.info("Auth token issued", { userId: user._id, role: user.role });
 };
 
 /**
@@ -64,9 +89,7 @@ export const signup = asyncHandler(async (req, res, next) => {
   logger.info("Signup start", { email: req.body?.email });
   const { name, email, password, passwordConfirm } = req.body;
 
-  if (password !== passwordConfirm) {
-    return next(new AppError("Passwords do not match", 400));
-  }
+  validatePasswordConfirm(password, passwordConfirm);
 
   const newUser = await User.create({ name, email, password });
   const verificationToken = await assignEmailVerificationToUser(newUser);
@@ -76,11 +99,13 @@ export const signup = asyncHandler(async (req, res, next) => {
     await new Email(newUser, verificationUrl).sendWelcome();
     createSendToken(newUser, 201, res);
   } catch (err) {
-    newUser.emailVerificationToken = undefined;
-    newUser.emailVerificationExpires = undefined;
-    await newUser.save({ validateBeforeSave: false });
-    logger.error("Signup email error", { message: err.message, stack: err.stack, userId: newUser._id });
-    return next(new AppError("Error sending verification email", 500));
+    await handleEmailError(
+      newUser, 
+      ["emailVerificationToken", "emailVerificationExpires"], 
+      err, 
+      next, 
+      "signup"
+    );
   }
 });
 
@@ -91,19 +116,8 @@ export const signup = asyncHandler(async (req, res, next) => {
  */
 export const verifyEmail = asyncHandler(async (req, res, next) => {
   logger.info("Verify email start");
-  const hashedToken = crypto
-    .createHash("sha256")
-    .update(req.params.token)
-    .digest("hex");
-
-  const user = await User.findOne({
-    emailVerificationToken: hashedToken,
-    emailVerificationExpires: { $gt: Date.now() },
-  });
-
-  if (!user) {
-    return next(new AppError("Token is invalid or has expired", 400));
-  }
+  
+  const user = await verifyEmailToken(req.params.token);
 
   user.isEmailVerified = true;
   user.emailVerificationToken = undefined;
@@ -127,7 +141,7 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new AppError("Please provide email and password", 400));
   }
 
-  const user = await User.findOne({ email }).select("+password");
+  const user = await getUserWithPassword(email);
 
   if (!user || !(await user.comparePassword(password))) {
     return next(new AppError("Incorrect email or password", 401));
@@ -176,11 +190,13 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
       .json({ status: "success", message: "Token sent to email!" });
     logger.info("Password reset token sent", { userId: user._id });
   } catch (err) {
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
-    await user.save({ validateBeforeSave: false });
-    logger.error("Forgot password email error", { message: err.message, stack: err.stack, userId: user._id });
-    return next(new AppError("Error sending email", 500));
+    await handleEmailError(
+      user,
+      ["passwordResetToken", "passwordResetExpires"],
+      err,
+      next,
+      "forgot password"
+    );
   }
 });
 
@@ -191,23 +207,9 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
  */
 export const resetPassword = asyncHandler(async (req, res, next) => {
   logger.info("Reset password start");
-  const hashedToken = crypto
-    .createHash("sha256")
-    .update(req.params.token)
-    .digest("hex");
-
-  const user = await User.findOne({
-    passwordResetToken: hashedToken,
-    passwordResetExpires: { $gt: Date.now() },
-  });
-
-  if (!user) {
-    return next(new AppError("Token is invalid or has expired", 400));
-  }
-
-  if (req.body.password !== req.body.passwordConfirm) {
-    return next(new AppError("Passwords do not match", 400));
-  }
+  
+  const user = await verifyPasswordResetToken(req.params.token);
+  validatePasswordConfirm(req.body.password, req.body.passwordConfirm);
 
   user.password = req.body.password;
   user.passwordChangedAt = Date.now();
@@ -232,9 +234,7 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
     return next(new AppError("Your current password is wrong.", 401));
   }
 
-  if (req.body.password !== req.body.passwordConfirm) {
-    return next(new AppError("Passwords do not match", 400));
-  }
+  validatePasswordConfirm(req.body.password, req.body.passwordConfirm);
 
   user.password = req.body.password;
   user.passwordChangedAt = Date.now();
