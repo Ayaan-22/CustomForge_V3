@@ -69,7 +69,15 @@ cartSchema.pre("save", async function (next) {
     if (!Array.isArray(this.items)) return next();
 
     // Collect product ids and ensure unique ids in query
-    const productIds = [...new Set(this.items.map((i) => i.product))];
+    const productIds = [
+      ...new Set(
+        this.items.map((i) =>
+          typeof i.product === "object" && i.product._id
+            ? i.product._id.toString()
+            : i.product.toString()
+        )
+      ),
+    ];
 
     if (productIds.length === 0) {
       this.lastUpdated = Date.now();
@@ -89,7 +97,12 @@ cartSchema.pre("save", async function (next) {
         return next(new Error("Quantity must be a number between 1 and 10"));
       }
 
-      const prod = productMap.get(item.product.toString());
+      const prod = productMap.get(
+        typeof item.product === "object" && item.product._id
+          ? item.product._id.toString()
+          : item.product.toString()
+      );
+      
       if (!prod) {
         return next(new Error(`Product ${item.product} not found`));
       }

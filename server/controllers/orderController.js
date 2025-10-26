@@ -269,6 +269,3 @@ export const getMyOrders = asyncHandler(async (req, res) => {
   });
   logger.info("Fetched my orders", { userId: req.user._id, count: orders.length });
 });
-
-
-
