@@ -4,7 +4,96 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
 /**
- * Main user schema
+ * Embedded Address Schema
+ */
+const addressSchema = new mongoose.Schema(
+  {
+    label: {
+      type: String,
+      trim: true,
+      default: "Home",
+    },
+    fullName: {
+      type: String,
+      required: [true, "Full name is required"],
+    },
+    address: {
+      type: String,
+      required: [true, "Street address is required"],
+    },
+    city: {
+      type: String,
+      required: [true, "City is required"],
+    },
+    state: {
+      type: String,
+      required: [true, "State is required"],
+    },
+    postalCode: {
+      type: String,
+      required: [true, "Postal code is required"],
+    },
+    country: {
+      type: String,
+      required: [true, "Country is required"],
+      default: "United States",
+    },
+    phoneNumber: {
+      type: String,
+      required: [true, "Phone number is required"],
+    },
+    isDefault: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  { _id: false }
+);
+
+/**
+ * Embedded Payment Method Schema
+ */
+const paymentMethodSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ["stripe", "paypal", "cod", "credit_card"],
+      required: [true, "Payment method type is required"],
+      default: "stripe",
+    },
+    cardHolderName: {
+      type: String,
+      trim: true,
+    },
+    cardNumber: {
+      type: String,
+      minlength: [12, "Invalid card number"],
+      maxlength: [19, "Invalid card number"],
+      select: false, // Never expose
+    },
+    expiryMonth: {
+      type: Number,
+      min: 1,
+      max: 12,
+    },
+    expiryYear: {
+      type: Number,
+      validate: {
+        validator: (v) => v >= new Date().getFullYear(),
+        message: "Expiry year cannot be in the past",
+      },
+    },
+    billingAddress: addressSchema,
+    isDefault: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  { _id: false }
+);
+
+/**
+ * Main User Schema
  */
 const userSchema = new mongoose.Schema(
   {
@@ -69,18 +158,9 @@ const userSchema = new mongoose.Schema(
         ref: "Product",
       },
     ],
-    addresses: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Address",
-      },
-    ],
-    paymentMethods: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "PaymentMethod",
-      },
-    ],
+    // Embedded schemas (aligned with Order model)
+    addresses: [addressSchema],
+    paymentMethods: [paymentMethodSchema],
   },
   {
     timestamps: true,
@@ -92,34 +172,30 @@ const userSchema = new mongoose.Schema(
 // Indexes for better query performance
 userSchema.index({ role: 1 });
 
-/**
- * Middleware: Hash password before saving
- */
+/* ---------------- Middleware: Hash password before saving ---------------- */
 userSchema.pre("save", async function (next) {
-  // Only hash if password was modified
   if (!this.isModified("password")) return next();
-
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-/**
- * Middleware: Filter out inactive users
- */
+/* ---------------- Middleware: Exclude inactive users ---------------- */
 userSchema.pre(/^find/, function (next) {
   this.find({ active: { $ne: false } });
   next();
 });
 
+/* ---------------- Instance Methods ---------------- */
+
 /**
- * Method: Compare candidate password with stored hash
+ * Compare candidate password with stored hash
  */
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
 /**
- * Method: Check if user changed password after the JWT was issued
+ * Check if user changed password after the JWT was issued
  */
 userSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
   if (this.passwordChangedAt) {
@@ -129,12 +205,11 @@ userSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
     );
     return JWTTimestamp < changedTimestamp;
   }
-  // False means NOT changed
   return false;
 };
 
 /**
- * Method: Remove sensitive data from output
+ * Clean output (remove sensitive info)
  */
 userSchema.methods.toJSON = function () {
   const user = this.toObject();
@@ -145,6 +220,17 @@ userSchema.methods.toJSON = function () {
   delete user.passwordResetToken;
   delete user.passwordResetExpires;
   delete user.twoFactorSecret;
+
+  // Mask card numbers before output
+  if (user.paymentMethods) {
+    user.paymentMethods = user.paymentMethods.map((pm) => {
+      if (pm.cardNumber) {
+        pm.cardNumber = "**** **** **** " + pm.cardNumber.slice(-4);
+      }
+      return pm;
+    });
+  }
+
   return user;
 };
 
