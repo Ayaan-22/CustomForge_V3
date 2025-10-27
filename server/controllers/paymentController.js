@@ -66,6 +66,11 @@ async function processStripePayment(order, paymentData, user) {
     paymentData.paymentIntentId
   );
 
+  // Ensure the intent actually succeeded
+  if (paymentIntent.status !== "succeeded") {
+    throw AppError.badRequest("Payment not completed");
+  }
+
   // Verify payment intent matches order
   if (paymentIntent.metadata.orderId !== order._id.toString()) {
     throw AppError.badRequest("Payment intent does not match order");
@@ -220,8 +225,16 @@ export const handleWebhook = asyncHandler(async (req, res, next) => {
 });
 
 async function handleSuccessfulPayment(paymentIntent) {
+  // Basic validation
+  if (!paymentIntent || !paymentIntent.metadata || !paymentIntent.metadata.orderId) {
+    throw AppError.badRequest("Invalid payment intent metadata");
+  }
+
   const order = await Order.findById(paymentIntent.metadata.orderId);
   if (!order) throw AppError.notFound("Order not found");
+
+  // Idempotency: if order already paid, ignore duplicate webhook
+  if (order.isPaid) return;
 
   const paidAmount = paymentIntent.amount_received / 100;
   if (Math.abs(paidAmount - order.totalPrice) > 0.01) {

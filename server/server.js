@@ -23,6 +23,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 //import couponRoutes from "./routes/couponRoutes.js";
 import emailTestRoutes from "./routes/emailTestRoutes.js";
+import { handleWebhook } from "./controllers/paymentController.js";
 
 // Middleware
 import { errorHandler } from "./middleware/errorMiddleware.js";
@@ -66,6 +67,13 @@ app.use(
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
+);
+
+// Add raw body route for Stripe webhook BEFORE express.json() so signature verification uses the raw payload:
+app.post(
+  "/api/v1/payment/webhook",
+  express.raw({ type: "application/json" }),
+  handleWebhook
 );
 
 app.use(express.json({ limit: "10kb" }));

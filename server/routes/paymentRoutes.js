@@ -3,17 +3,13 @@ import express from 'express';
 import {
   processPayment,
   createPaymentIntent,
-  handleWebhook,
+  // handleWebhook, // removed — webhook handled at app level to preserve raw body
   savePaymentMethod,
   getPaymentMethods
 } from '../controllers/paymentController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
-
-// Webhook for Stripe (No authentication needed)
-router.route('/webhook')
-  .post(handleWebhook);
 
 // Authenticated Payment Operations
 router.use(protect);
