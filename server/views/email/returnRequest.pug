@@ -1,0 +1,24 @@
+extends baseEmail
+
+block content
+  h1 Return Request Received
+  p Hi #{firstName},
+  p We have received your return request for order ##{order._id}.
+  
+  h2 Return Request Details:
+  p Reason: #{returnRequest.reason}
+  p Status: #{returnRequest.status}
+  p Requested on: #{returnRequest.requestedAt}
+  
+  p Our team will review your request and get back to you within 2-3 business days.
+  p You can track the status of your return request by clicking the button below.
+  
+  table.btn.btn-primary(role='presentation', border='0', cellpadding='0', cellspacing='0')
+    tbody
+      tr
+        td(align='left')
+          table(role='presentation', border='0', cellpadding='0', cellspacing='0')
+            tbody
+              tr
+                td
+                  a(href=`${url}`, target='_blank') Track Return Request

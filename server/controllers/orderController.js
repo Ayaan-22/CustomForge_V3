@@ -5,6 +5,7 @@ import Cart from "../models/Cart.js";
 import AppError from "../utils/appError.js";
 import asyncHandler from "express-async-handler";
 import { logger } from "../middleware/logger.js";
+import Email from "../utils/email.js";
 
 /**
  * @desc    Create new order from the cart
@@ -109,6 +110,18 @@ export const createOrder = asyncHandler(async (req, res, next) => {
     { $set: { items: [] } }
   );
 
+  // Send order confirmation email
+  try {
+    const email = new Email(req.user, `${process.env.FRONTEND_URL}/orders/${order._id}`);
+    await email.sendOrderConfirmation(order);
+  } catch (error) {
+    logger.error("Order confirmation email failed", { 
+      orderId: order._id, 
+      error: error.message 
+    });
+    // Don't throw error, as order is already created
+  }
+
   res.status(201).json({
     success: true,
     data: order,
@@ -172,7 +185,6 @@ export const getPaymentStatus = asyncHandler(async (req, res, next) => {
 });
 
 
-
 /**
  * @desc    Cancel order
  * @route   PUT /api/orders/:id/cancel
@@ -193,6 +205,14 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
 
   try {
     await order.cancelOrder();
+    
+    // Send cancellation email
+    const email = new Email(req.user, `${process.env.FRONTEND_URL}/orders/${order._id}`);
+    await email.send("orderCancellation", "Your GameShop Order has been cancelled", {
+      order,
+      cancellationDate: new Date(),
+    });
+
     res.json({
       success: true,
       message: "Order cancelled successfully",
@@ -247,13 +267,26 @@ export const requestReturn = asyncHandler(async (req, res, next) => {
 
   await order.save();
 
+  // Send return request confirmation email
+  try {
+    const email = new Email(req.user, `${process.env.FRONTEND_URL}/orders/${order._id}`);
+    await email.send("returnRequest", "Your Return Request has been received", {
+      order,
+      returnRequest: order.returnRequest,
+    });
+  } catch (error) {
+    logger.error("Return request email failed", { 
+      orderId: order._id, 
+      error: error.message 
+    });
+  }
+
   res.json({
     success: true,
     message: "Return request submitted",
   });
   logger.info("Return requested", { id: req.params.id, userId: req.user._id });
 });
-
 
 /**
  * @desc    Get logged in user orders

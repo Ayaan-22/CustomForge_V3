@@ -1,0 +1,14 @@
+extends baseEmail
+
+block content
+  h1 Order Cancelled
+  p Hi #{firstName},
+  p Your order ##{order._id} has been cancelled successfully.
+  p Cancellation Date: #{cancellationDate}
+  
+  if order.refundAmount
+    p A refund of $#{order.refundAmount} will be processed to your original payment method.
+    
+  p If you have any questions about your cancellation, please contact our support team.
+  
+  p Thank you for shopping with GameShop!
