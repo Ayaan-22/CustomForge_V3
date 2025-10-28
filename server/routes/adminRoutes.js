@@ -7,14 +7,14 @@ import {
   getProductStats,
   getDashboardOverview,
   getInventoryAnalytics,
-  
+
   // User Management
   createUser,
   getAllUsers,
   getUserById,
   deleteUser,
   updateUser,
-  
+
   // Product Management
   getAllProducts,
   createProduct,
@@ -22,7 +22,7 @@ import {
   deleteProduct,
   getProductReviews,
   deleteProductReview,
-  
+
   // Order Management
   getOrders,
   updateOrderToDelivered,
@@ -30,119 +30,113 @@ import {
   processReturn,
   markOrderAsPaid,
   updateOrderStatus,
-  
+
   // Coupon Management
   createCoupon,
   getCoupons,
   getCoupon,
   updateCoupon,
   deleteCoupon
-} from '../controllers/adminController.js';
+} from "../controllers/adminController.js";
+
 import {
   protect,
   verifiedEmail,
   twoFactorAuth,
   restrictTo
-} from '../middleware/authMiddleware.js';
+} from "../middleware/authMiddleware.js";
+
 import {
   getAllLogs,
   getLogById,
   getAvailableLogDates,
-  getLogStats,
+  getLogStats
 } from "../controllers/logController.js";
+
+// Rate limiters (centralized config)
+import { adminLimiter, logRateLimiter } from "../config/rateLimit.js";
 
 const router = express.Router();
 
-// Apply all protection and checks
+/* ============================================================================
+   SECURITY & ACCESS CONTROL
+   ========================================================================== */
 router.use(protect);
 router.use(verifiedEmail);
-//router.use(twoFactorAuth);
-router.use(restrictTo('admin'));
+// router.use(twoFactorAuth);
+router.use(restrictTo("admin"));
 
-// ============================================================================
-// ANALYTICS & DASHBOARD ROUTES
-// ============================================================================
+// Apply global admin-level rate limiting
+router.use(adminLimiter);
 
-// Dashboard overview with comprehensive metrics
-router.get('/analytics/overview', getDashboardOverview);
+/* ============================================================================
+   ANALYTICS & DASHBOARD ROUTES
+   ========================================================================== */
+router.get("/analytics/overview", getDashboardOverview);
+router.get("/analytics/sales", getSalesAnalytics);
+router.get("/analytics/products", getProductStats);
+router.get("/analytics/inventory", getInventoryAnalytics);
 
-// Sales analytics with multiple time periods
-router.get('/analytics/sales', getSalesAnalytics);
+/* ============================================================================
+   USER MANAGEMENT ROUTES
+   ========================================================================== */
+router.post("/users", createUser);
+router.get("/users", getAllUsers);
 
-// Product statistics and analytics
-router.get('/analytics/products', getProductStats);
+router
+  .route("/users/:id")
+  .get(getUserById)
+  .patch(updateUser)
+  .delete(deleteUser);
 
-// Inventory analytics and stock management
-router.get('/analytics/inventory', getInventoryAnalytics);
+/* ============================================================================
+   PRODUCT MANAGEMENT ROUTES
+   ========================================================================== */
+router.get("/products", getAllProducts);
+router.post("/products", createProduct);
 
-// ============================================================================
-// USER MANAGEMENT ROUTES
-// ============================================================================
+router
+  .route("/products/:id")
+  .patch(updateProduct)
+  .delete(deleteProduct);
 
-// User CRUD operations
-router.post('/users', createUser);         // Create new user
-router.get('/users', getAllUsers);         // Get all users with advanced filtering and pagination
+router
+  .route("/products/:id/reviews")
+  .get(getProductReviews)
+  .delete(deleteProductReview);
 
-// Individual user operations
-router.route('/users/:id')
-  .get(getUserById)        // Get user details
-  .patch(updateUser)       // Update user information
-  .delete(deleteUser);     // Delete user account
+/* ============================================================================
+   ORDER MANAGEMENT ROUTES
+   ========================================================================== */
+router.get("/orders", getOrders);
+router.put("/orders/:id/deliver", updateOrderToDelivered);
+router.put("/orders/:id/mark-paid", markOrderAsPaid);
+router.put("/orders/:id/status", updateOrderStatus);
+router.post("/orders/:id/refund", processRefund);
+router.put("/orders/:id/process-return", processReturn);
 
-// ============================================================================
-// PRODUCT MANAGEMENT ROUTES
-// ============================================================================
+/* ============================================================================
+   COUPON MANAGEMENT ROUTES
+   ========================================================================== */
+router
+  .route("/coupons")
+  .post(createCoupon)
+  .get(getCoupons);
 
-// Product CRUD operations
-router.get('/products', getAllProducts);                    // Get all products with advanced filtering
-router.post('/products', createProduct);                    // Create new product
-router.route('/products/:id')
-  .patch(updateProduct)     // Update product details
-  .delete(deleteProduct);   // Delete product
+router
+  .route("/coupons/:id")
+  .get(getCoupon)
+  .patch(updateCoupon)
+  .delete(deleteCoupon);
 
-// Product review management
-router.route('/products/:id/reviews')
-  .get(getProductReviews)      // Get all product reviews
-  .delete(deleteProductReview); // Delete specific review
+/* ============================================================================
+   SYSTEM & LOG MANAGEMENT ROUTES (with logRateLimiter)
+   ========================================================================== */
+router.use("/logs", logRateLimiter); // Apply ONLY to /logs routes
 
-// ============================================================================
-// ORDER MANAGEMENT ROUTES
-// ============================================================================
-
-// Order listing and management
-router.get('/orders', getOrders);                          // Get all orders with filtering
-
-// Order status updates
-router.put('/orders/:id/deliver', updateOrderToDelivered);  // Mark as delivered
-router.put('/orders/:id/mark-paid', markOrderAsPaid);       // Mark as paid
-router.put('/orders/:id/status', updateOrderStatus);        // Update order status
-
-// Refund and return processing
-router.post('/orders/:id/refund', processRefund);           // Process refund
-router.put('/orders/:id/process-return', processReturn);    // Process return request
-
-// ============================================================================
-// COUPON MANAGEMENT ROUTES
-// ============================================================================
-
-// Coupon CRUD operations
-router.route('/coupons')
-  .post(createCoupon)       // Create new coupon
-  .get(getCoupons);         // Get all coupons
-
-router.route('/coupons/:id')
-  .get(getCoupon)           // Get specific coupon
-  .patch(updateCoupon)      // Update coupon
-  .delete(deleteCoupon);    // Delete coupon
-
-// ============================================================================
-// SYSTEM & LOG MANAGEMENT ROUTES
-// ============================================================================
-
-// System logs and monitoring
-router.get("/logs", getAllLogs);                          // Get all system logs
-router.get("/logs/:id", getLogById);                      // Get specific log entry
-router.get("/logs/dates/available", getAvailableLogDates); // Get available log dates
-router.get("/logs/stats", getLogStats);                   // Get log statistics
+router.get("/logs", getAllLogs);
+router.get("/logs/:id", getLogById);
+router.get("/logs/dates/available", getAvailableLogDates);
+router.get("/logs/stats", getLogStats);
 
 export default router;

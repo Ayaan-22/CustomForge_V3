@@ -119,8 +119,7 @@ app.use((req, res, next) => {
 app.use("/api", apiLimiter);
 app.use("/api/v1/auth", authLimiter);
 app.use("/api/v1/payment", paymentLimiter);
-app.use("/api/v1/admin", adminLimiter);
-app.use("/api/v1/logs", logRateLimiter);
+
 app.use(publicLimiter); // Apply to all other requests
 
 // ----------------------------
