@@ -7,8 +7,8 @@ axios.defaults.withCredentials = true
 
 const BASE_URL = "http://localhost:5000/api/v1"
 
-// Manually set token (e.g., JWT)
-const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODExODYyNDNmYTMzOTk3ODM1OTUzOGUiLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NTQxMjY0OTgsImV4cCI6MTc2MTkwMjQ5OH0.4z6WIibf0hD6xHvmXWVW9h807gE7njpuZTgdlMEDKz4"
+// Use environment variable for token
+const token = process.env.NEXT_PUBLIC_API_TOKEN
 
 axios.defaults.headers.common["Authorization"] = `Bearer ${token}`
 
