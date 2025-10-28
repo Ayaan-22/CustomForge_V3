@@ -6,17 +6,21 @@ import { logger } from "../middleware/logger.js";
 
 dotenv.config();
 
-// Helper to parse env vars with fallback
+/* ----------------------------- Helper Functions ----------------------------- */
+
+// Safely parse environment variables with fallback
 const parseEnvInt = (key, fallback) => {
   const val = parseInt(process.env[key], 10);
   return Number.isNaN(val) ? fallback : val;
 };
 
-// Generic API limiter settings (from .env)
+/* ------------------------------- Base Settings ------------------------------ */
+
+// Generic API limiter settings
 const WINDOW_MS_API = parseEnvInt("RATE_LIMIT_WINDOW_MS", 15 * 60 * 1000);
 const MAX_API_REQ = parseEnvInt("RATE_LIMIT_MAX", 100);
 
-// Specialized limiters (customize via .env if desired)
+// Specialized limiters (override via .env if needed)
 const WINDOW_MS_AUTH = parseEnvInt("RATE_AUTH_WINDOW_MS", WINDOW_MS_API);
 const MAX_AUTH_ATTEMPTS = parseEnvInt("RATE_AUTH_MAX", 10);
 
@@ -29,7 +33,12 @@ const MAX_ADMIN_REQ = parseEnvInt("RATE_ADMIN_MAX", 50);
 const WINDOW_MS_PUBLIC = parseEnvInt("RATE_PUBLIC_WINDOW_MS", WINDOW_MS_API);
 const MAX_PUBLIC_REQ = parseEnvInt("RATE_PUBLIC_MAX", 300);
 
-// Build a limiter config with tagged logs and Retry-After header
+const WINDOW_MS_LOG = parseEnvInt("RATE_LOG_WINDOW_MS", 15 * 60 * 1000);
+const MAX_LOG_REQ = parseEnvInt("RATE_LOG_MAX", 100);
+
+/* ---------------------------- Limiter Constructor --------------------------- */
+
+// Generic builder with logging + Retry-After header
 const buildLimiter = ({ windowMs, max, message, tag }) =>
   rateLimit({
     windowMs,
@@ -51,34 +60,46 @@ const buildLimiter = ({ windowMs, max, message, tag }) =>
     },
   });
 
-// Exported limiters
+/* -------------------------------- Limiters --------------------------------- */
+
 export const apiLimiter = buildLimiter({
   windowMs: WINDOW_MS_API,
   max: MAX_API_REQ,
   message: "Too many requests; please try again later.",
   tag: "API",
 });
+
 export const authLimiter = buildLimiter({
   windowMs: WINDOW_MS_AUTH,
   max: MAX_AUTH_ATTEMPTS,
   message: "Too many authentication attempts; try again later.",
   tag: "AUTH",
 });
+
 export const paymentLimiter = buildLimiter({
   windowMs: WINDOW_MS_PAYMENT,
   max: MAX_PAYMENT_ATTEMPTS,
   message: "Too many payment attempts; please wait.",
   tag: "PAYMENT",
 });
+
 export const adminLimiter = buildLimiter({
   windowMs: WINDOW_MS_ADMIN,
   max: MAX_ADMIN_REQ,
   message: "Too many admin requests; please try again later.",
   tag: "ADMIN",
 });
+
 export const publicLimiter = buildLimiter({
   windowMs: WINDOW_MS_PUBLIC,
   max: MAX_PUBLIC_REQ,
   message: "Too many requests; please try again later.",
   tag: "PUBLIC",
+});
+
+export const logRateLimiter = buildLimiter({
+  windowMs: WINDOW_MS_LOG,
+  max: MAX_LOG_REQ,
+  message: "Too many log requests from this IP, please try again later.",
+  tag: "LOG",
 });

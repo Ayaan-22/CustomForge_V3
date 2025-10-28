@@ -41,9 +41,15 @@ import {
 import {
   protect,
   verifiedEmail,
-  twoFactorAuth
+  twoFactorAuth,
+  restrictTo
 } from '../middleware/authMiddleware.js';
-import { isAdmin } from '../middleware/adminMiddleware.js';
+import {
+  getAllLogs,
+  getLogById,
+  getAvailableLogDates,
+  getLogStats,
+} from "../controllers/logController.js";
 
 const router = express.Router();
 
@@ -51,7 +57,7 @@ const router = express.Router();
 router.use(protect);
 router.use(verifiedEmail);
 //router.use(twoFactorAuth);
-router.use(isAdmin);
+router.use(restrictTo('admin'));
 
 // ============================================================================
 // ANALYTICS & DASHBOARD ROUTES
@@ -133,10 +139,10 @@ router.route('/coupons/:id')
 // SYSTEM & LOG MANAGEMENT ROUTES
 // ============================================================================
 
-import { getAllLogs, getLogById } from "../controllers/logController.js";
-
 // System logs and monitoring
-router.get("/logs", getAllLogs);        // Get all system logs
-router.get("/logs/:id", getLogById);    // Get specific log entry
+router.get("/logs", getAllLogs);                          // Get all system logs
+router.get("/logs/:id", getLogById);                      // Get specific log entry
+router.get("/logs/dates/available", getAvailableLogDates); // Get available log dates
+router.get("/logs/stats", getLogStats);                   // Get log statistics
 
 export default router;
