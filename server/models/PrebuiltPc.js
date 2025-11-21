@@ -1,5 +1,6 @@
 // File: server/models/PrebuiltPc.js
 import AppError from "../utils/appError.js";
+import mongoose from "mongoose";
 
 const prebuiltPcSchema = new mongoose.Schema(
   {
