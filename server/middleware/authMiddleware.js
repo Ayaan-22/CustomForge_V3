@@ -1,4 +1,4 @@
-// File: server/middleware/authMiddleware.js
+// server/middleware/authMiddleware.js
 
 import jwt from "jsonwebtoken";
 import asyncHandler from "express-async-handler";
@@ -22,11 +22,15 @@ const protect = asyncHandler(async (req, res, next) => {
   } else if (req.cookies?.jwt) {
     token = req.cookies.jwt;
   } else if (req.query?.token) {
+    // ⚠️ Recommended: limit this usage to specific flows like email verification
     token = req.query.token;
   }
 
   if (!token) {
-    logger.warn("Unauthorized access attempt - no token");
+    logger.warn("Unauthorized access attempt - no token", {
+      ip: req.ip,
+      route: req.originalUrl,
+    });
     return next(
       new AppError("You are not logged in! Please log in to get access.", 401)
     );
@@ -43,6 +47,17 @@ const protect = asyncHandler(async (req, res, next) => {
       logger.warn(`Access attempt with invalid user ID: ${decoded.userId}`);
       return next(
         new AppError("The user belonging to this token no longer exists.", 401)
+      );
+    }
+
+    // Block inactive / soft-deleted accounts
+    if (currentUser.isActive === false) {
+      logger.warn(`Inactive user attempted access: ${currentUser.email}`);
+      return next(
+        new AppError(
+          "This account has been deactivated. Please contact support.",
+          403
+        )
       );
     }
 
@@ -64,7 +79,10 @@ const protect = asyncHandler(async (req, res, next) => {
     logger.info(`User authenticated: ${currentUser.email}`);
     next();
   } catch (err) {
-    logger.error(`JWT verification failed: ${err.message}`);
+    logger.error(`JWT verification failed: ${err.message}`, {
+      route: req.originalUrl,
+      ip: req.ip,
+    });
     return next(new AppError("Invalid token. Please log in again.", 401));
   }
 });
@@ -74,6 +92,9 @@ const protect = asyncHandler(async (req, res, next) => {
  */
 const restrictTo = (...roles) => {
   return (req, _res, next) => {
+    if (!req.user) {
+      return next(new AppError("Not authenticated", 401));
+    }
     if (!roles.includes(req.user.role)) {
       logger.warn(
         `Unauthorized role access attempt by ${req.user.email} (role: ${req.user.role})`
@@ -90,9 +111,11 @@ const restrictTo = (...roles) => {
 /**
  * Middleware to ensure user has verified email
  */
-const verifiedEmail = asyncHandler(async (req, res, next) => {
-  if (!req.user.isEmailVerified) {
-    logger.warn(`Unverified email access attempt by ${req.user.email}`);
+const verifiedEmail = asyncHandler(async (req, _res, next) => {
+  if (!req.user?.isEmailVerified) {
+    logger.warn(`Unverified email access attempt by ${req.user?.email}`, {
+      userId: req.user?._id,
+    });
     return next(
       new AppError(
         "Please verify your email address to access this resource",
@@ -106,8 +129,8 @@ const verifiedEmail = asyncHandler(async (req, res, next) => {
 /**
  * Middleware for two-factor authentication verification
  */
-const twoFactorAuth = asyncHandler(async (req, res, next) => {
-  if (!req.user.twoFactorEnabled || !req.user.twoFactorSecret) return next(); // ✅ Improved
+const twoFactorAuth = asyncHandler(async (req, _res, next) => {
+  if (!req.user?.twoFactorEnabled || !req.user.twoFactorSecret) return next();
 
   const twoFactorToken = req.headers["x-2fa-token"] || req.body.twoFactorToken;
 

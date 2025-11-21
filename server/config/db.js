@@ -1,4 +1,4 @@
-// File: server/config/db.js
+// server/config/db.js
 
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -24,11 +24,58 @@ const DB_OPTIONS = {
   w: "majority",
 };
 
-// Retry & state config
 let isConnected = false;
 let retryAttempts = 0;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = process.env.RETRY_DELAY_MS || 5000;
+
+let eventsInitialized = false;
+
+const initConnectionEvents = () => {
+  if (eventsInitialized) return;
+  eventsInitialized = true;
+
+  mongoose.connection.on("connecting", () => {
+    logger.info("[DB] Connecting to MongoDB...");
+  });
+
+  mongoose.connection.on("connected", () => {
+    isConnected = true;
+    retryAttempts = 0;
+    logger.info(`[DB] ✅ MongoDB Connected: ${mongoose.connection.host}`);
+  });
+
+  mongoose.connection.on("error", (err) => {
+    logger.error(`[DB] ❌ MongoDB Error: ${err.message}`);
+  });
+
+  mongoose.connection.on("disconnected", () => {
+    isConnected = false;
+    logger.warn("[DB] ⚠️ MongoDB Disconnected");
+    if (retryAttempts < MAX_RETRIES) {
+      retryAttempts++;
+      logger.info(
+        `[DB] Retrying connection (${retryAttempts}/${MAX_RETRIES}) in ${RETRY_DELAY_MS}ms`
+      );
+      setTimeout(connectDB, RETRY_DELAY_MS);
+    } else {
+      logger.error("[DB] ❌ Maximum retry attempts reached. Exiting...");
+      process.exit(1);
+    }
+  });
+
+  mongoose.connection.on("reconnected", () => {
+    isConnected = true;
+    logger.info("[DB] ♻️ MongoDB Reconnected");
+  });
+
+  // Graceful shutdown (register once)
+  process.on("SIGINT", async () => {
+    await mongoose.connection.close();
+    logger.info("[DB] 🚪 MongoDB Connection Closed via App Termination");
+    process.exit(0);
+  });
+};
 
 /**
  * Enhanced MongoDB Connection Handler
@@ -39,53 +86,11 @@ const connectDB = async () => {
     return;
   }
 
+  initConnectionEvents();
+
   try {
     logger.info("[DB] 🔗 Attempting MongoDB connection...");
-
-    // Mongoose connection events
-    mongoose.connection.on("connecting", () => {
-      logger.info("[DB] Connecting to MongoDB...");
-    });
-
-    mongoose.connection.on("connected", () => {
-      isConnected = true;
-      retryAttempts = 0;
-      logger.info(`[DB] ✅ MongoDB Connected: ${mongoose.connection.host}`);
-    });
-
-    mongoose.connection.on("error", (err) => {
-      logger.error(`[DB] ❌ MongoDB Error: ${err.message}`);
-    });
-
-    mongoose.connection.on("disconnected", () => {
-      isConnected = false;
-      logger.warn("[DB] ⚠️ MongoDB Disconnected");
-      if (retryAttempts < MAX_RETRIES) {
-        retryAttempts++;
-        logger.info(
-          `[DB] Retrying connection (${retryAttempts}/${MAX_RETRIES}) in ${RETRY_DELAY_MS}ms`
-        );
-        setTimeout(connectDB, RETRY_DELAY_MS);
-      } else {
-        logger.error("[DB] ❌ Maximum retry attempts reached. Exiting...");
-        process.exit(1);
-      }
-    });
-
-    mongoose.connection.on("reconnected", () => {
-      isConnected = true;
-      logger.info("[DB] ♻️ MongoDB Reconnected");
-    });
-
-    // Connect to MongoDB
     await mongoose.connect(process.env.MONGO_URI, DB_OPTIONS);
-
-    // Graceful shutdown
-    process.on("SIGINT", async () => {
-      await mongoose.connection.close();
-      logger.info("[DB] 🚪 MongoDB Connection Closed via App Termination");
-      process.exit(0);
-    });
   } catch (error) {
     logger.error(`[DB] ❌ Initial MongoDB Connection Failed: ${error.message}`);
 

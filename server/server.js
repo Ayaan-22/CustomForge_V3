@@ -1,9 +1,8 @@
-// File: server/server.js
+// server/server.js
 import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
 import xss from "xss-clean";
 import hpp from "hpp";
@@ -11,7 +10,13 @@ import compression from "compression";
 import connectDB from "./config/db.js";
 import path from "path";
 import { fileURLToPath } from "url";
-import { logger, requestLogger, performanceLogger, errorLogger } from "./middleware/logger.js";
+import {
+  logger,
+  requestLogger,
+  performanceLogger,
+  errorLogger,
+  requestIdMiddleware,
+} from "./middleware/logger.js";
 import {
   apiLimiter,
   authLimiter,
@@ -56,7 +61,11 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'", process.env.CLIENT_URL],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "https://fonts.googleapis.com",
+        ],
         imgSrc: ["'self'", "data:", "https://res.cloudinary.com"],
         connectSrc: ["'self'", process.env.CLIENT_URL],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
@@ -102,12 +111,13 @@ app.use(
 app.use(compression());
 
 // ----------------------------
-// 🕵️  Logging Middleware
+// 🕵️  Logging & Request ID
 // ----------------------------
+app.use(requestIdMiddleware);   // ensure every request has an ID
 app.use(requestLogger);         // log each request + response
 app.use(performanceLogger);     // detect slow/fast requests
 
-// Optionally expose Request ID to frontend
+// Optionally expose Request ID to frontend (kept for backward compatibility)
 app.use((req, res, next) => {
   if (req.requestId) res.setHeader("X-Request-ID", req.requestId);
   next();
@@ -120,6 +130,7 @@ app.use("/api", apiLimiter);
 app.use("/api/v1/auth", authLimiter);
 app.use("/api/v1/payment", paymentLimiter);
 
+// (adminLimiter, logRateLimiter can be attached to specific routes as needed)
 app.use(publicLimiter); // Apply to all other requests
 
 // ----------------------------

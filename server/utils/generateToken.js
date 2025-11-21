@@ -1,4 +1,4 @@
-// File: server/utils/generateToken.js
+// server/utils/generateToken.js
 import jwt from "jsonwebtoken";
 import AppError from "./appError.js";
 import crypto from "crypto";
@@ -19,7 +19,9 @@ const JWT_CONFIG = {
   expiresIn: process.env.JWT_EXPIRES_IN || "30d",
   shortExpires: process.env.JWT_SHORT_EXPIRES_IN || "15m",
   refreshExpires:
-    process.env.JWT_REFRESH_EXPIRES_IN || process.env.JWT_EXPIRES_IN || "30d",
+    process.env.JWT_REFRESH_EXPIRES_IN ||
+    process.env.JWT_EXPIRES_IN ||
+    "30d",
 };
 
 const TOKEN_EXPIRY = {
@@ -77,9 +79,13 @@ export const hashToken = (token) => {
 };
 
 // Token Verification Utility
-export const verifyTokenAndFindUser = async (token, tokenField, expiresField) => {
+export const verifyTokenAndFindUser = async (
+  token,
+  tokenField,
+  expiresField
+) => {
   const hashedToken = hashToken(token);
-  
+
   const user = await User.findOne({
     [tokenField]: hashedToken,
     [expiresField]: { $gt: Date.now() },
@@ -112,7 +118,7 @@ export const verifyPasswordResetToken = async (token) => {
 // Two-Factor Authentication
 export const generate2FASecret = (email) => {
   return speakeasy.generateSecret({
-    name: `GameStore (${email})`,
+    name: `GameShop (${email})`,
     length: 20,
   });
 };

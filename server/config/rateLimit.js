@@ -1,4 +1,4 @@
-// File: server/config/rateLimit.js
+// server/config/rateLimit.js
 
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
@@ -46,11 +46,19 @@ const buildLimiter = ({ windowMs, max, message, tag }) =>
     message,
     standardHeaders: true,
     legacyHeaders: false,
-    handler: (req, res, next, options) => {
-      logger.warn(
-        `[RATE:${tag}] IP=${req.ip}  PATH=${req.originalUrl}  LIMIT=${max}/${windowMs}ms`
-      );
+    handler: (req, res, _next, options) => {
       const retryAfterSec = Math.ceil(windowMs / 1000);
+
+      logger.warn(`[RATE:${tag}] Rate limit exceeded`, {
+        ip: req.ip,
+        path: req.originalUrl,
+        limit: max,
+        windowMs,
+        retryAfterSec,
+        method: req.method,
+        requestId: req.requestId,
+      });
+
       res.set("Retry-After", retryAfterSec);
       res.status(options.statusCode).json({
         status: "fail",

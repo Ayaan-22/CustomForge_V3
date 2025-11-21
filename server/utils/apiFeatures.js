@@ -1,24 +1,27 @@
-// File: server/utils/apiFeatures.js
+// server/utils/apiFeatures.js
+
+// Helper: escape regex meta characters to avoid ReDoS
+const escapeRegex = (str = "") =>
+  str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 class APIFeatures {
   /**
    * @param {import('mongoose').Query} query        - Mongoose query object, e.g., Model.find()
-   * @param {object}              queryString       - req.query from Express
-   * @param {object}              [options]         - Optional settings
-   * @param {string[]}            [options.searchFields=['name','description']]
-   *                                                - Fields to apply regex search on
+   * @param {object}                   queryString  - req.query from Express
+   * @param {object}                   [options]    - Optional settings
+   * @param {string[]}                 [options.searchFields=['name','description']]
    */
   constructor(query, queryString, options = {}) {
     this.query = query;
-    this.queryString = queryString;
+    this.queryString = queryString || {};
     this.searchFields = options.searchFields || ["name", "description"];
     this.filterCriteria = {};
     this.filteredCount = null;
-    this.totalCount = null;
+    this.totalCountValue = null; // renamed property, keep method name totalCount()
   }
 
   /**
-   * Apply filtering, range operators, regex search, and full‑text search.
+   * Apply filtering, range operators, regex search, and full-text search.
    */
   filter() {
     // 1) Remove special query params
@@ -35,15 +38,16 @@ class APIFeatures {
     );
     const filterCriteria = JSON.parse(queryStr);
 
-    // 3) Add regex‑based search if `search` present
+    // 3) Add safe regex-based search if `search` present
     if (this.queryString.search) {
-      const regex = new RegExp(this.queryString.search, "i");
+      const safe = escapeRegex(this.queryString.search);
+      const regex = new RegExp(safe, "i");
       filterCriteria.$or = this.searchFields.map((f) => ({
         [f]: { $regex: regex },
       }));
     }
 
-    // 4) Add MongoDB full‑text search if `textSearch` present
+    // 4) Add MongoDB full-text search if `textSearch` present
     if (this.queryString.textSearch) {
       filterCriteria.$text = { $search: this.queryString.textSearch };
     }
@@ -68,9 +72,10 @@ class APIFeatures {
 
   /**
    * Count total documents in the collection (ignoring filters).
+   * Keeps method name `totalCount()` for backwards compatibility.
    */
   async totalCount() {
-    this.totalCount = await this.query.model.estimatedDocumentCount();
+    this.totalCountValue = await this.query.model.estimatedDocumentCount();
     return this;
   }
 

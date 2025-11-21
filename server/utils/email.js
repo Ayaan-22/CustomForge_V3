@@ -1,4 +1,4 @@
-// File: server/utils/email.js
+// server/utils/email.js
 import nodemailer from "nodemailer";
 import pug from "pug";
 import { htmlToText } from "html-to-text";
@@ -19,17 +19,35 @@ export default class Email {
     this.data = data;
   }
 
+  /**
+   * Create a secure transport for sending emails.
+   */
   newTransport() {
+    const { EMAIL_USERNAME, EMAIL_PASSWORD, EMAIL_HOST, EMAIL_PORT } =
+      process.env;
+
+    if (!EMAIL_USERNAME || !EMAIL_PASSWORD) {
+      logger.error("Email transport misconfigured: missing credentials", {
+        hasUsername: !!EMAIL_USERNAME,
+        hasPassword: !!EMAIL_PASSWORD,
+      });
+      throw AppError.internal(
+        "Email service is not configured correctly. Please contact support."
+      );
+    }
+
+    const host = EMAIL_HOST || "smtp.gmail.com";
+    const port = Number(EMAIL_PORT) || 465; // 465 with secure: true
+
     return nodemailer.createTransport({
-      service: "gmail",
+      host,
+      port,
+      secure: true, // Enforce TLS
       auth: {
-        user: process.env.EMAIL_USERNAME, // Your Gmail address
-        pass: process.env.EMAIL_PASSWORD, // Your App Password (not Gmail password)
+        user: EMAIL_USERNAME,
+        pass: EMAIL_PASSWORD,
       },
-      secure: false,
-      tls: {
-        rejectUnauthorized: false,
-      },
+      // Do NOT disable TLS verification here
     });
   }
 
@@ -48,7 +66,6 @@ export default class Email {
         ...this.data,
       });
 
-      // Define email options
       const mailOptions = {
         from: this.from,
         to: this.to,
@@ -61,9 +78,9 @@ export default class Email {
         priority: "high",
       };
 
-      // Create transport and send email
       const transport = this.newTransport();
       await transport.sendMail(mailOptions);
+
       logger.info("Email sent", {
         to: this.to,
         subject,
