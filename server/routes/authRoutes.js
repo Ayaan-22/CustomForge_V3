@@ -1,4 +1,4 @@
-// File: server/routes/authRoutes.js
+// server/routes/authRoutes.js
 
 import express from "express";
 import {
@@ -13,7 +13,9 @@ import {
   verifyTwoFactor,
   disableTwoFactor,
 } from "../controllers/authController.js";
+
 import { loginLimiter } from "../controllers/authController.js";
+
 import {
   protect,
   verifiedEmail,
@@ -22,26 +24,40 @@ import {
 
 const router = express.Router();
 
-// Public routes
+/* ============================
+   PUBLIC AUTH ROUTES
+   ============================ */
 router.post("/register", signup);
 router.post("/login", loginLimiter, login);
 router.get("/logout", logout);
+
 router.get("/verify-email/:token", verifyEmail);
 
-// Password recovery routes
 router.post("/forgot-password", forgotPassword);
 router.patch("/reset-password/:token", resetPassword);
 
-// Authenticated routes
-router.use(protect); // Must be logged in
-router.use(verifiedEmail); // Must have verified email
+/* ============================
+   PROTECTED ROUTES – Must be logged in + verified email
+   ============================ */
+router.use(protect);
+router.use(verifiedEmail);
 
-// Sensitive routes - Require 2FA if enabled
+/* ============================
+   PASSWORD UPDATE (must have 2FA if enabled)
+   ============================ */
 router.patch("/update-password", twoFactorAuth, updatePassword);
 
-// Two-Factor Authentication setup
-router.post("/2fa/enable", twoFactorAuth, enableTwoFactor);
-router.post("/2fa/verify", twoFactorAuth, verifyTwoFactor);
+/* ============================
+   2FA SETUP FLOW
+   ============================ */
+
+// STEP 1 - Generate secret (NO 2FA required)
+router.post("/2fa/enable", enableTwoFactor);
+
+// STEP 2 - Verify secret (NO 2FA required – this is onboarding)
+router.post("/2fa/verify", verifyTwoFactor);
+
+// STEP 3 - Disable 2FA (YES 2FA REQUIRED)
 router.delete("/2fa/disable", twoFactorAuth, disableTwoFactor);
 
 export default router;

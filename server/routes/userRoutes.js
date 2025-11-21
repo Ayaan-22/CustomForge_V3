@@ -1,38 +1,49 @@
-// File: server/routes/userRoutes.js
+// server/routes/userRoutes.js
 
-import express from 'express';
+import express from "express";
 import {
   getMe,
   updateMe,
   deleteMe,
   getWishlist,
-  getUserOrders
-} from '../controllers/userController.js';
+  getUserOrders,
+} from "../controllers/userController.js";
+
 import {
   protect,
-  restrictTo,
   verifiedEmail,
-  twoFactorAuth
-} from '../middleware/authMiddleware.js';
+  twoFactorAuth,
+} from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// All routes require login
+/* ============================
+   ALL ROUTES REQUIRE LOGIN + VERIFIED EMAIL
+   ============================ */
 router.use(protect);
 router.use(verifiedEmail);
-//router.use(twoFactorAuth);
 
-// Current user routes
-router.get('/me', getMe);
-router.patch('/update-me', updateMe);
-router.delete('/delete-me', deleteMe);
+/* ============================
+   ACCOUNT MANAGEMENT
+   ============================ */
 
-// Wishlist routes
-router.get('/wishlist', getWishlist);
+// GET profile (no 2FA needed for viewing)
+router.get("/me", getMe);
 
-// Order history
-router.get('/orders', getUserOrders);
+// Update profile (PROTECTED by 2FA)
+router.patch("/update-me", twoFactorAuth, updateMe);
 
-// Admin user management routes moved to /api/v1/admin/users
+// Deactivate account (HIGH-RISK → require 2FA)
+router.delete("/delete-me", twoFactorAuth, deleteMe);
+
+/* ============================
+   WISHLIST & ORDERS
+   ============================ */
+
+// Wishlist - low risk, no 2FA needed
+router.get("/wishlist", getWishlist);
+
+// Orders - optional 2FA, but recommended to protect
+router.get("/orders", twoFactorAuth, getUserOrders);
 
 export default router;

@@ -52,6 +52,11 @@ const addressSchema = new mongoose.Schema(
 
 /**
  * Embedded Payment Method Schema
+ *
+ * NOTE: cardNumber is stored as plain string here but is:
+ *  - select: false (never returned by default)
+ *  - masked in toJSON()
+ * In a real system, you should store a token / last4 only or encrypt it.
  */
 const paymentMethodSchema = new mongoose.Schema(
   {
@@ -130,15 +135,42 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "default.jpg",
     },
+
+    // Simple profile contact fields (used in updateMe)
+    phone: {
+      type: String,
+      trim: true,
+    },
+    address: {
+      type: String,
+      trim: true,
+    },
+
     isEmailVerified: {
       type: Boolean,
-      default: true,
+      default: false,
     },
-    emailVerificationToken: String,
-    emailVerificationExpires: Date,
-    passwordResetToken: String,
-    passwordResetExpires: Date,
+
+    // These fields store HASHED tokens only (see generateToken utils)
+    emailVerificationToken: {
+      type: String,
+      select: false,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      select: false,
+    },
+    passwordResetToken: {
+      type: String,
+      select: false,
+    },
+    passwordResetExpires: {
+      type: Date,
+      select: false,
+    },
+
     passwordChangedAt: Date,
+
     twoFactorEnabled: {
       type: Boolean,
       default: false,
@@ -147,17 +179,20 @@ const userSchema = new mongoose.Schema(
       type: String,
       select: false,
     },
+
     active: {
       type: Boolean,
       default: true,
       select: false,
     },
+
     wishlist: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Product",
       },
     ],
+
     // Embedded schemas (aligned with Order model)
     addresses: [addressSchema],
     paymentMethods: [paymentMethodSchema],
@@ -171,17 +206,84 @@ const userSchema = new mongoose.Schema(
 
 // Indexes for better query performance
 userSchema.index({ role: 1 });
+userSchema.index({ email: 1 });
 
-/* ---------------- Middleware: Hash password before saving ---------------- */
+/* ---------------- Password hashing middleware ---------------- */
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
+
   this.password = await bcrypt.hash(this.password, 12);
+  // Keep passwordChangedAt in sync on direct password changes
+  this.passwordChangedAt = new Date();
   next();
 });
 
-/* ---------------- Middleware: Exclude inactive users ---------------- */
+/* ---------------- Validate single default address/payment ---------------- */
+userSchema.pre("save", function (next) {
+  if (this.isModified("addresses") && Array.isArray(this.addresses)) {
+    const defaults = this.addresses.filter((a) => a.isDefault);
+    if (defaults.length > 1) {
+      return next(new Error("User can have only one default address"));
+    }
+  }
+
+  if (this.isModified("paymentMethods") && Array.isArray(this.paymentMethods)) {
+    const defaults = this.paymentMethods.filter((p) => p.isDefault);
+    if (defaults.length > 1) {
+      return next(new Error("User can have only one default payment method"));
+    }
+  }
+
+  next();
+});
+
+/* ---------------- Exclude inactive users from all find queries ---------------- */
 userSchema.pre(/^find/, function (next) {
-  this.find({ active: { $ne: false } });
+  // Only add condition if not already filtering by active
+  const currentFilter = this.getFilter ? this.getFilter() : {};
+  if (currentFilter.active === undefined) {
+    this.find({ active: { $ne: false } });
+  }
+  next();
+});
+
+/* ---------------- Handle updates via findOneAndUpdate safely ---------------- */
+userSchema.pre("findOneAndUpdate", async function (next) {
+  let update = this.getUpdate() || {};
+  const hasDollar = Object.keys(update).some((k) => k.startsWith("$"));
+
+  // Support both { password: ... } and { $set: { password: ... } }
+  const getContainer = () => (hasDollar && update.$set ? update.$set : update);
+
+  const container = getContainer();
+
+  if (container.password) {
+    container.password = await bcrypt.hash(container.password, 12);
+    container.passwordChangedAt = new Date();
+  }
+
+  if (container.addresses && Array.isArray(container.addresses)) {
+    const defaults = container.addresses.filter((a) => a.isDefault);
+    if (defaults.length > 1) {
+      return next(new Error("User can have only one default address"));
+    }
+  }
+
+  if (container.paymentMethods && Array.isArray(container.paymentMethods)) {
+    const defaults = container.paymentMethods.filter((p) => p.isDefault);
+    if (defaults.length > 1) {
+      return next(new Error("User can have only one default payment method"));
+    }
+  }
+
+  // Write container back to update object
+  if (hasDollar && update.$set) {
+    update.$set = container;
+  } else {
+    update = container;
+  }
+
+  this.setUpdate(update);
   next();
 });
 
@@ -212,7 +314,8 @@ userSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
  * Clean output (remove sensitive info)
  */
 userSchema.methods.toJSON = function () {
-  const user = this.toObject();
+  const user = this.toObject({ virtuals: true });
+
   delete user.password;
   delete user.__v;
   delete user.emailVerificationToken;
@@ -220,6 +323,7 @@ userSchema.methods.toJSON = function () {
   delete user.passwordResetToken;
   delete user.passwordResetExpires;
   delete user.twoFactorSecret;
+  delete user.active;
 
   // Mask card numbers before output
   if (user.paymentMethods) {

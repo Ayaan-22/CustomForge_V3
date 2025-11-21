@@ -11,11 +11,14 @@ import { logger } from "../middleware/logger.js";
  */
 const filterObj = (obj, ...allowedFields) => {
   const newObj = {};
+  if (!obj || typeof obj !== "object") return newObj;
+
   Object.keys(obj).forEach((key) => {
     if (allowedFields.includes(key)) {
       newObj[key] = obj[key];
     }
   });
+
   return newObj;
 };
 
@@ -24,48 +27,62 @@ const filterObj = (obj, ...allowedFields) => {
  * @route   GET /api/users/me
  * @access  Private
  */
-export const getMe = asyncHandler(async (req, res) => {
+export const getMe = asyncHandler(async (req, res, next) => {
   const user = await User.findById(req.user.id)
     .select("-password -twoFactorSecret")
     .populate("wishlist", "name image finalPrice category");
+
+  if (!user) {
+    return next(new AppError("User not found", 404));
+  }
 
   res.status(200).json({
     success: true,
     data: user,
   });
+
   logger.info("Fetched profile", { userId: req.user.id });
 });
 
 /**
- * @desc    Update current user's profile
+ * @desc    Update current user's profile (non-sensitive fields only)
  * @route   PATCH /api/users/me
  * @access  Private
  */
 export const updateMe = asyncHandler(async (req, res, next) => {
-  logger.info("Update self start", { userId: req.user.id, bodyKeys: Object.keys(req.body || {}) });
-  
+  logger.info("Update self start", {
+    userId: req.user.id,
+    bodyKeys: Object.keys(req.body || {}),
+  });
+
   if (req.body.password || req.body.passwordConfirm) {
     return next(new AppError("This route is not for password updates", 400));
   }
 
+  // Only allow safe profile fields here (email updates should be a dedicated, verified flow)
   const filteredBody = filterObj(
     req.body,
     "name",
-    "email",
     "avatar",
     "phone",
     "address"
   );
 
-  const updatedUser = await User.findByIdAndUpdate(req.user.id, filteredBody, {
-    new: true,
-    runValidators: true,
-  }).select("-password -twoFactorSecret");
+  const user = await User.findById(req.user.id);
+
+  if (!user) {
+    return next(new AppError("User not found", 404));
+  }
+
+  Object.assign(user, filteredBody);
+
+  await user.save();
 
   res.status(200).json({
     success: true,
-    data: updatedUser,
+    data: user, // toJSON() on model removes sensitive fields
   });
+
   logger.info("Updated self", { userId: req.user.id });
 });
 
@@ -74,14 +91,24 @@ export const updateMe = asyncHandler(async (req, res, next) => {
  * @route   DELETE /api/users/me
  * @access  Private
  */
-export const deleteMe = asyncHandler(async (req, res) => {
+export const deleteMe = asyncHandler(async (req, res, next) => {
   logger.info("Deactivate self start", { userId: req.user.id });
-  await User.findByIdAndUpdate(req.user.id, { active: false });
+
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    { active: false },
+    { new: true }
+  );
+
+  if (!user) {
+    return next(new AppError("User not found", 404));
+  }
 
   res.status(204).json({
     success: true,
     data: null,
   });
+
   logger.info("Deactivated self", { userId: req.user.id });
 });
 
@@ -90,18 +117,26 @@ export const deleteMe = asyncHandler(async (req, res) => {
  * @route   GET /api/users/wishlist
  * @access  Private
  */
-export const getWishlist = asyncHandler(async (req, res) => {
+export const getWishlist = asyncHandler(async (req, res, next) => {
   const user = await User.findById(req.user.id).populate(
     "wishlist",
     "name image finalPrice category"
   );
 
+  if (!user) {
+    return next(new AppError("User not found", 404));
+  }
+
   res.status(200).json({
     success: true,
     results: user.wishlist.length,
     data: user.wishlist,
-  }); 
-  logger.info("Fetched user wishlist", { userId: req.user.id, results: user.wishlist.length });
+  });
+
+  logger.info("Fetched user wishlist", {
+    userId: req.user.id,
+    results: user.wishlist.length,
+  });
 });
 
 /**
@@ -109,7 +144,7 @@ export const getWishlist = asyncHandler(async (req, res) => {
  * @route   GET /api/users/orders
  * @access  Private
  */
-export const getUserOrders = asyncHandler(async (req, res) => {
+export const getUserOrders = asyncHandler(async (req, res, next) => {
   const orders = await Order.find({ user: req.user.id })
     .sort("-createdAt")
     .select("-user");
@@ -119,5 +154,9 @@ export const getUserOrders = asyncHandler(async (req, res) => {
     results: orders.length,
     data: orders,
   });
-  logger.info("Fetched user orders", { userId: req.user.id, results: orders.length });
+
+  logger.info("Fetched user orders", {
+    userId: req.user.id,
+    results: orders.length,
+  });
 });
