@@ -1,6 +1,7 @@
 // File: server/models/Game.js
 import mongoose from "mongoose";
 import AppError from "../utils/appError.js";
+import validator from 'validator';
 
 const gameSchema = new mongoose.Schema(
   {
@@ -16,28 +17,16 @@ const gameSchema = new mongoose.Schema(
         {
           type: String,
           enum: [
-            "Action",
-            "Adventure",
-            "RPG",
-            "Strategy",
-            "Sports",
-            "Shooter",
-            "Puzzle",
-            "Racing",
-            "Simulation",
-            "Horror",
-            "Fighting",
-            "Survival",
-            "MMO",
-            "Platformer",
-            "Sandbox",
+            "Action", "Adventure", "RPG", "Strategy", "Sports", "Shooter", 
+            "Puzzle", "Racing", "Simulation", "Horror", "Fighting", 
+            "Survival", "MMO", "Platformer", "Sandbox",
           ],
         },
       ],
       required: [true, "At least one genre is required"],
       validate: {
-        validator: (v) => v.length > 0,
-        message: "At least one genre must be specified",
+        validator: (v) => v.length > 0 && v.length <= 5,
+        message: "Must have 1-5 genres",
       },
     },
     platform: {
@@ -49,26 +38,31 @@ const gameSchema = new mongoose.Schema(
       ],
       required: [true, "At least one platform is required"],
       validate: {
-        validator: (v) => v.length > 0,
-        message: "At least one platform must be specified",
+        validator: (v) => v.length > 0 && v.length <= 3,
+        message: "Must have 1-3 platforms",
       },
     },
     developer: {
       type: String,
       required: [true, "Developer is required"],
       maxlength: [100, "Developer name cannot exceed 100 characters"],
+      trim: true,
     },
     publisher: {
       type: String,
       required: [true, "Publisher is required"],
       maxlength: [100, "Publisher name cannot exceed 100 characters"],
+      trim: true,
     },
     releaseDate: {
       type: Date,
       required: [true, "Release date is required"],
       validate: {
-        validator: (v) => v <= Date.now(),
-        message: "Release date cannot be in the future",
+        validator: function(v) {
+          // Allow future dates for pre-orders but not too far in future
+          return v <= new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year max
+        },
+        message: "Release date cannot be more than 1 year in the future",
       },
     },
     ageRating: {
@@ -86,18 +80,18 @@ const gameSchema = new mongoose.Schema(
     },
     systemRequirements: {
       minimum: {
-        os: { type: String, required: true },
-        processor: { type: String, required: true },
-        memory: { type: String, required: true },
-        graphics: { type: String, required: true },
-        storage: { type: String, required: true },
+        os: { type: String, required: true, maxlength: 100 },
+        processor: { type: String, required: true, maxlength: 100 },
+        memory: { type: String, required: true, maxlength: 50 },
+        graphics: { type: String, required: true, maxlength: 100 },
+        storage: { type: String, required: true, maxlength: 50 },
       },
       recommended: {
-        os: String,
-        processor: String,
-        memory: String,
-        graphics: String,
-        storage: String,
+        os: { type: String, maxlength: 100 },
+        processor: { type: String, maxlength: 100 },
+        memory: { type: String, maxlength: 50 },
+        graphics: { type: String, maxlength: 100 },
+        storage: { type: String, maxlength: 50 },
       },
     },
     languages: [
@@ -105,7 +99,8 @@ const gameSchema = new mongoose.Schema(
         name: {
           type: String,
           required: true,
-          match: [/^[A-Z][a-z]+( [A-Z][a-z]+)*$/, "Invalid language format"],
+          trim: true,
+          maxlength: 50,
         },
         interface: { type: Boolean, default: false },
         audio: { type: Boolean, default: false },
@@ -143,19 +138,21 @@ gameSchema.index({ platform: 1 });
 gameSchema.index({ developer: "text", publisher: "text" });
 gameSchema.index({ releaseDate: -1 });
 gameSchema.index({ metacriticScore: -1 });
+gameSchema.index({ "ratings.average": -1 });
 
-// Middleware
+// Middleware - Fixed category enforcement
 gameSchema.pre("save", async function (next) {
   const Product = mongoose.model("Product");
   const product = await Product.findById(this.product);
-
+  
   if (!product) {
     return next(new AppError("Linked product not found", 400));
   }
 
-  if (product.category !== "Games") {
-    product.category = "Games";
-    await product.save({ validateBeforeSave: false });
+  // Only set category if not already set to a valid game category
+  const gameCategories = ["Games", "PCGames", "ConsoleGames", "VRGames"];
+  if (!gameCategories.includes(product.category)) {
+    return next(new AppError("Product category must be a game category", 400));
   }
 
   next();
@@ -169,9 +166,11 @@ gameSchema.virtual("productDetails", {
   justOne: true,
 });
 
-// Query middleware to always populate product details
+// Optimized query middleware - only populate when needed
 gameSchema.pre(/^find/, function (next) {
-  this.populate("productDetails");
+  if (this.options.shouldPopulate !== false) {
+    this.populate("productDetails");
+  }
   next();
 });
 
