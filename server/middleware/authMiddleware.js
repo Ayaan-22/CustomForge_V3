@@ -40,7 +40,7 @@ const protect = asyncHandler(async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const currentUser = await User.findById(decoded.userId).select(
-      "+passwordChangedAt +isActive"
+      "+passwordChangedAt +active"
     );
 
     if (!currentUser) {
@@ -51,7 +51,7 @@ const protect = asyncHandler(async (req, res, next) => {
     }
 
     // Block inactive / soft-deleted accounts
-    if (currentUser.isActive === false) {
+    if (currentUser.active === false) {
       logger.warn(`Inactive user attempted access: ${currentUser.email}`);
       return next(
         new AppError(
