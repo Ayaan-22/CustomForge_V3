@@ -24,14 +24,13 @@ const prebuiltPcSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ["gaming", "workstation", "office", "home", "custom"],
+      enum: {
+        values: ["gaming", "workstation", "office", "home", "custom"],
+        message: "Category {VALUE} is not supported"
+      },
       default: "gaming",
     },
-    price: {
-      type: Number,
-      required: [true, "Price is required"],
-      min: [0, "Price cannot be negative"],
-    },
+    // Removed duplicate price field - using virtual from Product
     cpu: {
       model: {
         type: String,
@@ -39,7 +38,10 @@ const prebuiltPcSchema = new mongoose.Schema(
       },
       manufacturer: {
         type: String,
-        enum: ["Intel", "AMD"],
+        enum: {
+          values: ["Intel", "AMD"],
+          message: "Manufacturer {VALUE} is not supported"
+        },
         required: true,
       },
       cores: {
@@ -47,11 +49,11 @@ const prebuiltPcSchema = new mongoose.Schema(
         required: true,
       },
       speed: {
-        type: Number, // GHz
+        type: Number,
         required: true,
       },
       cache: {
-        type: Number, // MB
+        type: Number,
       },
     },
     gpu: {
@@ -61,11 +63,14 @@ const prebuiltPcSchema = new mongoose.Schema(
       },
       manufacturer: {
         type: String,
-        enum: ["NVIDIA", "AMD"],
+        enum: {
+          values: ["NVIDIA", "AMD"],
+          message: "Manufacturer {VALUE} is not supported"
+        },
         required: true,
       },
       vram: {
-        type: Number, // GB
+        type: Number,
         required: true,
       },
     },
@@ -73,32 +78,41 @@ const prebuiltPcSchema = new mongoose.Schema(
       model: String,
       formFactor: {
         type: String,
-        enum: ["ATX", "Micro-ATX", "Mini-ITX"],
+        enum: {
+          values: ["ATX", "Micro-ATX", "Mini-ITX"],
+          message: "Form factor {VALUE} is not supported"
+        },
       },
       chipset: String,
     },
     ram: {
       capacity: {
-        type: Number, // GB
+        type: Number,
         required: true,
       },
       speed: {
-        type: Number, // MHz
+        type: Number,
       },
       type: {
         type: String,
-        enum: ["DDR4", "DDR5"],
+        enum: {
+          values: ["DDR4", "DDR5"],
+          message: "RAM type {VALUE} is not supported"
+        },
       },
     },
     storage: [
       {
         type: {
           type: String,
-          enum: ["SSD", "HDD", "NVMe"],
+          enum: {
+            values: ["SSD", "HDD", "NVMe"],
+            message: "Storage type {VALUE} is not supported"
+          },
           required: true,
         },
         capacity: {
-          type: Number, // GB
+          type: Number,
           required: true,
         },
       },
@@ -110,7 +124,10 @@ const prebuiltPcSchema = new mongoose.Schema(
       },
       rating: {
         type: String,
-        enum: ["80+ Bronze", "80+ Silver", "80+ Gold", "80+ Platinum"],
+        enum: {
+          values: ["80+ Bronze", "80+ Silver", "80+ Gold", "80+ Platinum"],
+          message: "Power supply rating {VALUE} is not supported"
+        },
       },
     },
     case: {
@@ -121,19 +138,25 @@ const prebuiltPcSchema = new mongoose.Schema(
     coolingSystem: {
       type: {
         type: String,
-        enum: ["air", "liquid"],
+        enum: {
+          values: ["air", "liquid"],
+          message: "Cooling type {VALUE} is not supported"
+        },
       },
       description: String,
     },
     operatingSystem: {
       type: String,
-      enum: ["Windows 11", "Windows 10", "Linux", "None"],
+      enum: {
+        values: ["Windows 11", "Windows 10", "Linux", "None"],
+        message: "OS {VALUE} is not supported"
+      },
     },
     warrantyPeriod: {
-      type: Number, // Months
+      type: Number,
       min: [0, "Warranty period cannot be negative"],
     },
-    images: [String], // Array of image URLs
+    images: [String],
     stock: {
       type: Number,
       required: true,
@@ -168,7 +191,7 @@ const prebuiltPcSchema = new mongoose.Schema(
         },
       },
     ],
-    features: [String], // e.g., ['RGB Lighting', 'Wi-Fi 6', 'Bluetooth 5.0']
+    features: [String],
     sku: {
       type: String,
       unique: true,
@@ -182,6 +205,11 @@ const prebuiltPcSchema = new mongoose.Schema(
     versionKey: false,
   }
 );
+
+// Virtual for price from linked Product
+prebuiltPcSchema.virtual('price').get(function() {
+  return this.productDetails?.finalPrice || 0;
+});
 
 // Middleware to handle product category
 prebuiltPcSchema.pre("save", async function (next) {
@@ -208,9 +236,15 @@ prebuiltPcSchema.virtual("productDetails", {
   justOne: true,
 });
 
-// Automatic population for queries
+// Automatic population for queries with error handling
 prebuiltPcSchema.pre(/^find/, function (next) {
-  this.populate("productDetails");
+  this.populate({
+    path: "productDetails",
+    select: "name category brand finalPrice images ratings stock",
+    options: { lean: true }
+  }).catch(err => {
+    console.error('Population failed:', err.message);
+  });
   next();
 });
 

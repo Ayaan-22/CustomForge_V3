@@ -46,7 +46,7 @@ const productSchema = new mongoose.Schema(
         "GamingDesk", "SoundCard", "Cables", "GamingLaptop", "Games", 
         "PCGames", "ConsoleGames", "VRGames",
       ],
-      immutable: true, // Prevent category changes after creation
+      immutable: true,
     },
     brand: {
       type: String,
@@ -106,7 +106,7 @@ const productSchema = new mongoose.Schema(
         default: 0,
         min: [0, "Rating cannot be negative"],
         max: [5, "Rating cannot exceed 5"],
-        set: val => Math.round(val * 10) / 10, // Round to 1 decimal
+        set: val => Math.round(val * 10) / 10,
       },
       totalReviews: {
         type: Number,
@@ -119,7 +119,7 @@ const productSchema = new mongoose.Schema(
       default: [],
       validate: {
         validator: function(features) {
-          return features.length <= 20; // Limit features array size
+          return features.length <= 20;
         },
         message: 'Cannot have more than 20 features'
       }
@@ -167,15 +167,10 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for better query performance
+// Optimized indexes for better query performance
 productSchema.index({ name: "text", description: "text", brand: "text" });
-productSchema.index({ category: 1 });
-productSchema.index({ brand: 1 });
-productSchema.index({ finalPrice: 1 });
-productSchema.index({ "ratings.average": -1 });
-productSchema.index({ salesCount: -1 });
-productSchema.index({ isFeatured: 1 });
-productSchema.index({ isActive: 1 });
+productSchema.index({ category: 1, "ratings.average": -1, isActive: 1 });
+productSchema.index({ isFeatured: 1, isActive: 1, category: 1 });
 productSchema.index({ sku: 1 }, { unique: true });
 
 /**
@@ -233,72 +228,72 @@ productSchema.pre("save", function (next) {
 });
 
 /**
- * Static: Atomic stock update to prevent race conditions
+ * Transaction helper for atomic operations
  */
-productSchema.statics.updateStockAtomic = async function(productId, quantity) {
+productSchema.statics.executeInTransaction = async (operations) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
-  
   try {
-    const product = await this.findById(productId).session(session);
-    if (!product) {
-      throw new Error('Product not found');
-    }
-    
-    if (product.stock + quantity < 0) {
-      throw new Error('Insufficient stock');
-    }
-    
-    product.stock += quantity;
-    await product.save({ session });
+    session.startTransaction();
+    const result = await operations(session);
     await session.commitTransaction();
-    
-    return product;
+    return result;
   } catch (error) {
     await session.abortTransaction();
     throw error;
   } finally {
     session.endSession();
   }
+};
+
+/**
+ * Static: Atomic stock update to prevent race conditions
+ */
+productSchema.statics.updateStockAtomic = async function(productId, quantity) {
+  const result = await this.findByIdAndUpdate(
+    productId,
+    { 
+      $inc: { stock: quantity },
+      $set: { 
+        availability: quantity > 0 ? "In Stock" : "Out of Stock" 
+      }
+    },
+    { new: true, runValidators: true }
+  );
+  
+  if (!result) {
+    throw new Error('Product not found');
+  }
+  
+  return result;
 };
 
 /**
  * Method: Increment sales count atomically
  */
 productSchema.methods.incrementSales = async function (quantity = 1) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
-  try {
-    this.salesCount += quantity;
-    await this.save({ session });
-    await session.commitTransaction();
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    session.endSession();
-  }
+  const result = await this.constructor.findByIdAndUpdate(
+    this._id,
+    { $inc: { salesCount: quantity } },
+    { new: true, runValidators: true }
+  );
+  return result;
 };
 
 /**
  * Method: Update stock level atomically
  */
 productSchema.methods.updateStock = async function (newStock) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
-  try {
-    this.stock = newStock;
-    this.availability = newStock > 0 ? "In Stock" : "Out of Stock";
-    await this.save({ session });
-    await session.commitTransaction();
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    session.endSession();
-  }
+  const result = await this.constructor.findByIdAndUpdate(
+    this._id,
+    { 
+      $set: { 
+        stock: newStock,
+        availability: newStock > 0 ? "In Stock" : "Out of Stock"
+      }
+    },
+    { new: true, runValidators: true }
+  );
+  return result;
 };
 
 /**

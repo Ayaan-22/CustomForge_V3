@@ -6,19 +6,18 @@ import mongoose from "mongoose";
  */
 const reviewSchema = new mongoose.Schema(
   {
-    // Reference to either Product or Game (mutually exclusive)
     product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: function () {
-        return !this.game; // Required if game is not provided
+        return !this.game;
       },
     },
     game: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Game",
       required: function () {
-        return !this.product; // Required if product is not provided
+        return !this.product;
       },
     },
     user: {
@@ -41,7 +40,7 @@ const reviewSchema = new mongoose.Schema(
     comment: {
       type: String,
       required: [true, "Please provide your review comments"],
-      maxlength: [500, "Review cannot exceed 500 characters"],
+      maxlength: [1000, "Review cannot exceed 1000 characters"],
     },
     verifiedPurchase: {
       type: Boolean,
@@ -59,29 +58,36 @@ const reviewSchema = new mongoose.Schema(
     reportReason: String,
     media: [
       {
-        type: String, // URLs to images/videos
+        type: String,
         validate: {
           validator: function (v) {
-            return /\.(jpg|jpeg|png|gif|mp4)$/i.test(v);
+            return /^https?:\/\/.+\.(jpg|jpeg|png|gif|mp4|webm)(\?.*)?$/i.test(v);
           },
-          message: (props) => `${props.value} is not a valid media file`,
+          message: (props) => `${props.value} is not a valid media URL`,
         },
       },
     ],
-    // Game-specific fields
     platform: {
       type: String,
-      enum: ["PC", "PlayStation", "Xbox", "Nintendo", "Mobile", "VR"],
+      enum: {
+        values: ["PC", "PlayStation", "Xbox", "Nintendo", "Mobile", "VR"],
+        message: "Platform {VALUE} is not supported"
+      },
       required: function () {
-        return !!this.game; // Required only for game reviews
+        return !!this.game;
       },
     },
     playtimeHours: {
       type: Number,
       min: 0,
+      max: [10000, "Playtime cannot exceed 10000 hours"],
       required: function () {
-        return !!this.game; // Required only for game reviews
+        return !!this.game;
       },
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {
@@ -98,54 +104,80 @@ const reviewSchema = new mongoose.Schema(
 // Prevent duplicate reviews by the same user for the same product/game
 reviewSchema.index(
   { user: 1, product: 1 },
-  { unique: true, partialFilterExpression: { product: { $exists: true } } }
+  { 
+    unique: true, 
+    partialFilterExpression: { 
+      product: { $exists: true },
+      isActive: true 
+    } 
+  }
 );
 
 reviewSchema.index(
   { user: 1, game: 1 },
-  { unique: true, partialFilterExpression: { game: { $exists: true } } }
+  { 
+    unique: true, 
+    partialFilterExpression: { 
+      game: { $exists: true },
+      isActive: true 
+    } 
+  }
 );
 
 // Performance indexes
-reviewSchema.index({ rating: -1 }); // For sorting by highest rating
-reviewSchema.index({ helpfulVotes: -1 }); // For most helpful reviews
-reviewSchema.index({ createdAt: -1 }); // For newest reviews
-reviewSchema.index({ product: 1, rating: -1 }); // For product-specific ratings
-reviewSchema.index({ game: 1, rating: -1 }); // For game-specific ratings
+reviewSchema.index({ rating: -1 });
+reviewSchema.index({ helpfulVotes: -1 });
+reviewSchema.index({ createdAt: -1 });
+reviewSchema.index({ product: 1, rating: -1, isActive: 1 });
+reviewSchema.index({ game: 1, rating: -1, isActive: 1 });
+reviewSchema.index({ isActive: 1 });
 
 // ======================
 // MIDDLEWARE
 // ======================
 
 /**
- * Pre-find Hook: Automatically populate user data
+ * Pre-find Hook: Automatically populate user data with error handling
  */
 reviewSchema.pre(/^find/, function (next) {
+  this.find({ isActive: true });
+  
   this.populate({
     path: "user",
     select: "name avatar verified",
+    options: { lean: true }
+  }).catch(err => {
+    console.error('User population failed:', err.message);
   });
   next();
 });
 
 /**
- * Post-save Hook: Update average ratings
+ * Post-save Hook: Update average ratings with error handling
  */
-reviewSchema.post("save", function (doc) {
-  doc.constructor.calculateAverageRatings(
-    doc.product || null,
-    doc.game || null
-  );
+reviewSchema.post("save", async function (doc) {
+  try {
+    await doc.constructor.calculateAverageRatings(
+      doc.product || null,
+      doc.game || null
+    );
+  } catch (error) {
+    console.error('Failed to update average ratings:', error.message);
+  }
 });
 
 /**
- * Post-remove Hook: Update average ratings
+ * Post-remove Hook: Update average ratings with error handling
  */
-reviewSchema.post("remove", function (doc) {
-  doc.constructor.calculateAverageRatings(
-    doc.product || null,
-    doc.game || null
-  );
+reviewSchema.post("remove", async function (doc) {
+  try {
+    await doc.constructor.calculateAverageRatings(
+      doc.product || null,
+      doc.game || null
+    );
+  } catch (error) {
+    console.error('Failed to update average ratings after removal:', error.message);
+  }
 });
 
 // ======================
@@ -171,6 +203,15 @@ reviewSchema.methods.report = async function (reason) {
   return this;
 };
 
+/**
+ * Soft delete review
+ */
+reviewSchema.methods.softDelete = async function () {
+  this.isActive = false;
+  await this.save();
+  return this;
+};
+
 // ======================
 // STATICS
 // ======================
@@ -186,33 +227,39 @@ reviewSchema.statics.calculateAverageRatings = async function (
   const targetModel = productId ? "Product" : "Game";
   const targetField = productId ? "product" : "game";
 
-  const stats = await this.aggregate([
-    {
-      $match: { [targetField]: targetId },
-    },
-    {
-      $group: {
-        _id: `$${targetField}`,
-        nRating: { $sum: 1 },
-        avgRating: { $avg: "$rating" },
+  try {
+    const stats = await this.aggregate([
+      {
+        $match: { 
+          [targetField]: targetId,
+          isActive: true 
+        },
       },
-    },
-  ]);
+      {
+        $group: {
+          _id: `$${targetField}`,
+          nRating: { $sum: 1 },
+          avgRating: { $avg: "$rating" },
+        },
+      },
+    ]);
 
-  const updateData =
-    stats.length > 0
-      ? {
-          average: stats[0].avgRating,
-          totalReviews: stats[0].nRating,
-        }
-      : {
-          average: 0,
-          totalReviews: 0,
-        };
+    const updateData =
+      stats.length > 0
+        ? {
+            "ratings.average": parseFloat(stats[0].avgRating.toFixed(1)),
+            "ratings.totalReviews": stats[0].nRating,
+          }
+        : {
+            "ratings.average": 0,
+            "ratings.totalReviews": 0,
+          };
 
-  await mongoose.model(targetModel).findByIdAndUpdate(targetId, {
-    ratings: updateData,
-  });
+    await mongoose.model(targetModel).findByIdAndUpdate(targetId, updateData);
+  } catch (error) {
+    console.error('Error calculating average ratings:', error.message);
+    throw error;
+  }
 };
 
 // ======================

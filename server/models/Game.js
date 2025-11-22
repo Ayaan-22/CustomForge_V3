@@ -1,7 +1,6 @@
 // File: server/models/Game.js
 import mongoose from "mongoose";
 import AppError from "../utils/appError.js";
-import validator from 'validator';
 
 const gameSchema = new mongoose.Schema(
   {
@@ -16,11 +15,14 @@ const gameSchema = new mongoose.Schema(
       type: [
         {
           type: String,
-          enum: [
-            "Action", "Adventure", "RPG", "Strategy", "Sports", "Shooter", 
-            "Puzzle", "Racing", "Simulation", "Horror", "Fighting", 
-            "Survival", "MMO", "Platformer", "Sandbox",
-          ],
+          enum: {
+            values: [
+              "Action", "Adventure", "RPG", "Strategy", "Sports", "Shooter", 
+              "Puzzle", "Racing", "Simulation", "Horror", "Fighting", 
+              "Survival", "MMO", "Platformer", "Sandbox",
+            ],
+            message: "Genre {VALUE} is not supported"
+          },
         },
       ],
       required: [true, "At least one genre is required"],
@@ -33,7 +35,10 @@ const gameSchema = new mongoose.Schema(
       type: [
         {
           type: String,
-          enum: ["PC", "PlayStation", "Xbox", "Nintendo", "Mobile", "VR"],
+          enum: {
+            values: ["PC", "PlayStation", "Xbox", "Nintendo", "Mobile", "VR"],
+            message: "Platform {VALUE} is not supported"
+          },
         },
       ],
       required: [true, "At least one platform is required"],
@@ -59,8 +64,7 @@ const gameSchema = new mongoose.Schema(
       required: [true, "Release date is required"],
       validate: {
         validator: function(v) {
-          // Allow future dates for pre-orders but not too far in future
-          return v <= new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year max
+          return v <= new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
         },
         message: "Release date cannot be more than 1 year in the future",
       },
@@ -75,7 +79,10 @@ const gameSchema = new mongoose.Schema(
     },
     multiplayer: {
       type: String,
-      enum: ["None", "Local", "Online", "Both"],
+      enum: {
+        values: ["None", "Local", "Online", "Both"],
+        message: "Multiplayer type {VALUE} is not supported"
+      },
       default: "None",
     },
     systemRequirements: {
@@ -109,7 +116,10 @@ const gameSchema = new mongoose.Schema(
     ],
     edition: {
       type: String,
-      enum: ["Standard", "Deluxe", "Collector", "Gold", "Ultimate"],
+      enum: {
+        values: ["Standard", "Deluxe", "Collector", "Gold", "Ultimate"],
+        message: "Edition {VALUE} is not supported"
+      },
       default: "Standard",
     },
     metacriticScore: {
@@ -132,13 +142,12 @@ const gameSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
+// Optimized indexes
 gameSchema.index({ genre: 1 });
 gameSchema.index({ platform: 1 });
 gameSchema.index({ developer: "text", publisher: "text" });
 gameSchema.index({ releaseDate: -1 });
 gameSchema.index({ metacriticScore: -1 });
-gameSchema.index({ "ratings.average": -1 });
 
 // Middleware - Fixed category enforcement
 gameSchema.pre("save", async function (next) {
@@ -149,7 +158,6 @@ gameSchema.pre("save", async function (next) {
     return next(new AppError("Linked product not found", 400));
   }
 
-  // Only set category if not already set to a valid game category
   const gameCategories = ["Games", "PCGames", "ConsoleGames", "VRGames"];
   if (!gameCategories.includes(product.category)) {
     return next(new AppError("Product category must be a game category", 400));
@@ -166,10 +174,16 @@ gameSchema.virtual("productDetails", {
   justOne: true,
 });
 
-// Optimized query middleware - only populate when needed
+// Optimized query middleware with error handling
 gameSchema.pre(/^find/, function (next) {
   if (this.options.shouldPopulate !== false) {
-    this.populate("productDetails");
+    this.populate({
+      path: "productDetails",
+      select: "name category brand finalPrice images ratings",
+      options: { lean: true }
+    }).catch(err => {
+      console.error('Population failed:', err.message);
+    });
   }
   next();
 });
