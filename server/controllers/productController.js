@@ -40,23 +40,6 @@ const sanitizeInput = (input, options = {}) => {
 };
 
 /**
- * Authorization middleware
- */
-export const authorize = (...roles) => {
-  return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      logger.warn("Unauthorized access attempt", {
-        userId: req.user?.id,
-        requiredRoles: roles,
-        userRole: req.user?.role
-      });
-      return next(new AppError('Not authorized for this action', 403));
-    }
-    next();
-  };
-};
-
-/**
  * Query sanitization for APIFeatures
  */
 const sanitizeQuery = (query) => {
