@@ -1,30 +1,35 @@
 // File: server/routes/paymentRoutes.js
-import express from 'express';
+import express from "express";
 import {
   processPayment,
   createPaymentIntent,
-  // handleWebhook, // removed — webhook handled at app level to preserve raw body
-  savePaymentMethod,
-  getPaymentMethods
-} from '../controllers/paymentController.js';
-import { protect } from '../middleware/authMiddleware.js';
+  getPaymentMethods,
+  savePaymentMethod
+} from "../controllers/paymentController.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Authenticated Payment Operations
+// All payment routes require authentication
 router.use(protect);
 
-// Unified payment processing endpoint
-router.route('/process')
+/**
+ * PROCESS PAYMENT (STRIPE / PAYPAL / COD)
+ */
+router.route("/process")
   .post(processPayment);
 
-// Stripe-specific operations
-router.route('/create-intent')
+/**
+ * STRIPE CLIENT-SECRET FLOW
+ */
+router.route("/create-intent")
   .post(createPaymentIntent);
 
-// Payment methods management
-router.route('/payment-methods')
-  .get(getPaymentMethods) // List saved methods
-  .post(savePaymentMethod); // Save new method
+/**
+ * USER PAYMENT METHODS (STRIPE STORED CARDS)
+ */
+router.route("/payment-methods")
+  .get(getPaymentMethods)
+  .post(savePaymentMethod);
 
 export default router;

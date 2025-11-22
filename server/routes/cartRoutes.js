@@ -1,34 +1,48 @@
 // File: server/routes/cartRoutes.js
-import express from 'express';
+import express from "express";
 import {
   getCart,
   addToCart,
+  updateCartItem,
   removeFromCart,
   clearCart,
-  updateCartItem,
   applyCoupon,
   removeCoupon
-} from '../controllers/cartController.js';
-import { protect } from '../middleware/authMiddleware.js';
+} from "../controllers/cartController.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Cart Routes (must be logged in)
+// All cart routes require authentication
 router.use(protect);
 
-// Manage cart
-router.route('/')
-  .get(getCart)        // View cart
-  .post(addToCart)     // Add to cart
-  .delete(clearCart);  // Clear cart
+/**
+ * CART CRUD
+ * GET    /api/cart        → get cart + preview totals
+ * POST   /api/cart        → add item
+ * DELETE /api/cart        → clear cart
+ */
+router.route("/")
+  .get(getCart)
+  .post(addToCart)
+  .delete(clearCart);
 
-router.route('/:productId')
-  .patch(updateCartItem)   // Update item quantity
-  .delete(removeFromCart); // Remove item
+/**
+ * COUPON PREVIEW (not final validation)
+ * POST   /api/cart/coupon → apply coupon to cart (preview only)
+ * DELETE /api/cart/coupon → remove coupon from cart
+ */
+router.route("/coupon")
+.post(applyCoupon)
+.delete(removeCoupon);
 
-// Manage coupons on cart
-router.route('/coupon')
-  .post(applyCoupon)
-  .delete(removeCoupon);
+/**
+ * ITEM-LEVEL OPERATIONS
+ * PATCH  /api/cart/:productId → update qty
+ * DELETE /api/cart/:productId → remove item
+ */
+router.route("/:productId")
+  .patch(updateCartItem)
+  .delete(removeFromCart);
 
 export default router;

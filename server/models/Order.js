@@ -2,8 +2,16 @@
 import mongoose from "mongoose";
 import AppError from "../utils/appError.js";
 
+const ORDER_CONSTANTS = {
+  RETURN_WINDOW_DAYS: 30,
+  MAX_ITEMS: 50,
+  MAX_NAME_LENGTH: 100,
+  MAX_ADDRESS_LENGTH: 200,
+  MAX_NOTES_LENGTH: 1000,
+};
+
 /**
- * Schema for order items
+ * Schema for order items with price snapshot
  */
 const orderItemSchema = new mongoose.Schema(
   {
@@ -11,10 +19,21 @@ const orderItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: [true, "Order item must reference a product"],
+      validate: {
+        validator: function (v) {
+          return mongoose.Types.ObjectId.isValid(v);
+        },
+        message: "Invalid product ID",
+      },
     },
     name: {
       type: String,
       required: [true, "Product name is required"],
+      trim: true,
+      maxlength: [
+        ORDER_CONSTANTS.MAX_NAME_LENGTH,
+        `Product name cannot exceed ${ORDER_CONSTANTS.MAX_NAME_LENGTH} characters`,
+      ],
     },
     image: {
       type: String,
@@ -29,6 +48,16 @@ const orderItemSchema = new mongoose.Schema(
       type: Number,
       required: [true, "Quantity is required"],
       min: [1, "Quantity must be at least 1"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Quantity must be an integer",
+      },
+    },
+    // Store the price at time of order for audit purposes
+    priceSnapshot: {
+      type: Number,
+      required: [true, "Price snapshot is required"],
+      min: [0, "Price snapshot cannot be negative"],
     },
   },
   { _id: false }
@@ -39,63 +68,91 @@ const orderItemSchema = new mongoose.Schema(
  */
 const shippingAddressSchema = new mongoose.Schema(
   {
-    fullName: { type: String, required: [true, "Full name is required"] },
-    address: { type: String, required: [true, "Street address is required"] },
-    city: { type: String, required: [true, "City is required"] },
-    state: { type: String, required: [true, "State is required"] },
-    postalCode: { type: String, required: [true, "Postal code is required"] },
+    fullName: {
+      type: String,
+      required: [true, "Full name is required"],
+      trim: true,
+      maxlength: [
+        ORDER_CONSTANTS.MAX_NAME_LENGTH,
+        `Full name cannot exceed ${ORDER_CONSTANTS.MAX_NAME_LENGTH} characters`,
+      ],
+    },
+    address: {
+      type: String,
+      required: [true, "Street address is required"],
+      trim: true,
+      maxlength: [
+        ORDER_CONSTANTS.MAX_ADDRESS_LENGTH,
+        `Address cannot exceed ${ORDER_CONSTANTS.MAX_ADDRESS_LENGTH} characters`,
+      ],
+    },
+    city: {
+      type: String,
+      required: [true, "City is required"],
+      trim: true,
+      maxlength: [
+        ORDER_CONSTANTS.MAX_NAME_LENGTH,
+        `City name cannot exceed ${ORDER_CONSTANTS.MAX_NAME_LENGTH} characters`,
+      ],
+    },
+    state: {
+      type: String,
+      required: [true, "State is required"],
+      trim: true,
+      maxlength: [
+        ORDER_CONSTANTS.MAX_NAME_LENGTH,
+        `State name cannot exceed ${ORDER_CONSTANTS.MAX_NAME_LENGTH} characters`,
+      ],
+    },
+    postalCode: {
+      type: String,
+      required: [true, "Postal code is required"],
+      trim: true,
+      maxlength: [20, "Postal code cannot exceed 20 characters"],
+    },
     country: {
       type: String,
       required: [true, "Country is required"],
       default: "United States",
+      trim: true,
+      maxlength: [
+        ORDER_CONSTANTS.MAX_NAME_LENGTH,
+        `Country name cannot exceed ${ORDER_CONSTANTS.MAX_NAME_LENGTH} characters`,
+      ],
     },
   },
   { _id: false }
 );
 
 /**
- * Schema for payment result
- * (made flexible for COD or manual payment methods)
+ * Schema for coupon snapshot applied to the order
+ */
+const couponAppliedSchema = new mongoose.Schema(
+  {
+    code: { type: String, trim: true },
+    discountType: { type: String, enum: ["fixed", "percent"] },
+    discountValue: { type: Number },
+    discountAmount: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+/**
+ * Schema for payment result metadata
  */
 const paymentResultSchema = new mongoose.Schema(
   {
-    id: { type: String },
-    status: {
-      type: String,
-      enum: ["succeeded", "failed", "pending", "refunded"],
-    },
-    update_time: { type: String },
-    email_address: {
-      type: String,
-      match: [/.+\@.+\..+/, "Please fill a valid email address"],
-    },
-    payment_method: {
-      type: String,
-      enum: ["stripe", "paypal", "cod"],
-      required: true,
-    },
+    id: String,
+    status: String,
+    update_time: String,
+    email_address: String,
+    method: String,
   },
   { _id: false }
 );
 
 /**
- * Schema for return request
- */
-const returnRequestSchema = new mongoose.Schema(
-  {
-    requestedAt: { type: Date },
-    reason: { type: String, trim: true },
-    status: {
-      type: String,
-      enum: ["pending", "approved", "rejected"],
-      default: "pending",
-    },
-  },
-  { _id: false }
-);
-
-/**
- * Main order schema
+ * Order schema
  */
 const orderSchema = new mongoose.Schema(
   {
@@ -104,165 +161,196 @@ const orderSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Order must belong to a user"],
     },
-    orderItems: [orderItemSchema],
-    shippingAddress: shippingAddressSchema,
+    orderItems: {
+      type: [orderItemSchema],
+      validate: {
+        validator: function (items) {
+          return Array.isArray(items) && items.length > 0 && items.length <= ORDER_CONSTANTS.MAX_ITEMS;
+        },
+        message:
+          "Order must contain at least 1 item and not exceed " + ORDER_CONSTANTS.MAX_ITEMS + " items",
+      },
+      required: true,
+    },
+    shippingAddress: {
+      type: shippingAddressSchema,
+      required: [true, "Shipping address is required"],
+    },
     paymentMethod: {
       type: String,
-      required: [true, "Payment method is required"],
       enum: ["stripe", "paypal", "cod"],
       default: "stripe",
+      required: true,
     },
     paymentResult: paymentResultSchema,
+
     itemsPrice: {
       type: Number,
       required: [true, "Items price is required"],
-      min: 0,
+      min: [0, "Items price cannot be negative"],
     },
-    taxPrice: {
+    discountAmount: {
       type: Number,
-      required: [true, "Tax price is required"],
       default: 0,
-      min: 0,
+      min: [0, "Discount cannot be negative"],
     },
     shippingPrice: {
       type: Number,
       required: [true, "Shipping price is required"],
-      default: 0,
-      min: 0,
+      min: [0, "Shipping price cannot be negative"],
+    },
+    taxPrice: {
+      type: Number,
+      required: [true, "Tax price is required"],
+      min: [0, "Tax price cannot be negative"],
     },
     totalPrice: {
       type: Number,
       required: [true, "Total price is required"],
-      min: 0,
+      min: [0, "Total price cannot be negative"],
     },
-    isPaid: { type: Boolean, default: false },
+
+    couponApplied: couponAppliedSchema,
+
+    isPaid: {
+      type: Boolean,
+      default: false,
+    },
     paidAt: Date,
-    isDelivered: { type: Boolean, default: false },
+
+    isDelivered: {
+      type: Boolean,
+      default: false,
+    },
     deliveredAt: Date,
-    refundedAt: Date,
+
     status: {
       type: String,
-      enum: [
-        "pending",
-        "processing",
-        "shipped",
-        "delivered",
-        "cancelled",
-        "refunded",
-      ],
+      enum: ["pending", "paid", "shipped", "delivered", "cancelled", "refunded"],
       default: "pending",
     },
-    returnRequest: returnRequestSchema,
+
+    notes: {
+      type: String,
+      trim: true,
+      maxlength: [
+        ORDER_CONSTANTS.MAX_NOTES_LENGTH,
+        `Notes cannot exceed ${ORDER_CONSTANTS.MAX_NOTES_LENGTH} characters`,
+      ],
+    },
+
+    // Idempotency key for order creation
+    idempotencyKey: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
+    // For return window
+    returnRequestedAt: Date,
+    returnStatus: {
+      type: String,
+      enum: ["none", "requested", "approved", "rejected"],
+      default: "none",
+    },
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
   }
 );
 
-/* ---------------------------- Indexes ---------------------------- */
-orderSchema.index({ user: 1 });
-orderSchema.index({ status: 1 });
-orderSchema.index({ createdAt: -1 });
-orderSchema.index({ totalPrice: 1 });
-orderSchema.index({ "paymentResult.id": 1 });
-
-/* -------------------------- Virtuals ----------------------------- */
-/**
- * Virtual: Check if order is still returnable (within 30 days of delivery)
- */
-orderSchema.virtual("isReturnable").get(function () {
-  if (!this.deliveredAt) return false;
-  const diff = Date.now() - new Date(this.deliveredAt).getTime();
-  return diff <= 30 * 24 * 60 * 60 * 1000; // 30 days
-});
-
-/* ------------------------ Instance Methods ----------------------- */
+// Basic indexes
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
 
 /**
- * Mark order as paid
+ * Validate order totals match items/discount/shipping/tax.
  */
-orderSchema.methods.markAsPaid = async function (paymentResult) {
+orderSchema.methods.validateTotals = function () {
+  const itemsPriceCalculated = this.orderItems.reduce(
+    (sum, item) => sum + item.priceSnapshot * item.quantity,
+    0
+  );
+
+  const calculatedTotal =
+    itemsPriceCalculated - this.discountAmount + this.taxPrice + this.shippingPrice;
+
+  const tolerance = 0.01;
+
+  if (Math.abs(itemsPriceCalculated - this.itemsPrice) > tolerance) {
+    throw new AppError("Items price calculation mismatch", 400);
+  }
+
+  if (Math.abs(calculatedTotal - this.totalPrice) > tolerance) {
+    throw new AppError("Total price calculation mismatch", 400);
+  }
+
+  return true;
+};
+
+/**
+ * Mark order as paid with payment result
+ */
+orderSchema.methods.markAsPaid = async function (paymentResult, session = null) {
   if (this.isPaid) {
     throw new AppError("Order is already paid", 400);
   }
 
   this.isPaid = true;
-  this.paidAt = Date.now();
-  this.paymentResult = paymentResult;
-  this.status = "processing";
-  return this.save();
+  this.paidAt = new Date();
+  this.status = "paid";
+  this.paymentResult = paymentResult || this.paymentResult;
+
+  const saveOptions = session ? { session } : {};
+  await this.save(saveOptions);
 };
 
-/**
- * Process refund
- */
-orderSchema.methods.processRefund = async function () {
-  if (this.status !== "delivered") {
-    throw new AppError("Only delivered orders can be refunded", 400);
-  }
-  return this.markAsRefunded();
-};
+/* ------------------------ Static Methods ------------------------- */
 
 /**
- * Mark order as refunded (restores stock)
+ * Get all user orders with pagination
  */
-orderSchema.methods.markAsRefunded = async function () {
-  this.status = "refunded";
-  this.refundedAt = Date.now();
+orderSchema.statics.getUserOrders = function (userId, options = {}) {
+  const page = parseInt(options.page, 10) || 1;
+  const limit = Math.min(parseInt(options.limit, 10) || 10, 100);
+  const skip = (page - 1) * limit;
 
-  if (this.paymentResult) {
-    this.paymentResult.status = "refunded";
-  }
-
-  // Restore product stock
-  for (const item of this.orderItems) {
-    await mongoose
-      .model("Product")
-      .findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
-  }
-
-  return this.save();
-};
-
-/**
- * Cancel order (only if unpaid and not delivered)
- */
-orderSchema.methods.cancelOrder = async function () {
-  if (this.isPaid) {
-    throw new AppError(
-      "Paid orders cannot be cancelled - request a refund instead",
-      400
-    );
-  }
-
-  if (this.status === "delivered") {
-    throw new AppError("Delivered orders cannot be cancelled", 400);
-  }
-
-  this.status = "cancelled";
-
-  // Restore stock on cancellation
-  for (const item of this.orderItems) {
-    await mongoose
-      .model("Product")
-      .findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
-  }
-
-  return this.save();
-};
-
-/**
- * Static utility: Get all user orders (for dashboards)
- */
-orderSchema.statics.getUserOrders = function (userId) {
   return this.find({ user: userId })
-    .sort("-createdAt")
-    .select("orderItems totalPrice status createdAt")
+    .sort(options.sort || "-createdAt")
+    .skip(skip)
+    .limit(limit)
+    .select(
+      options.select ||
+        "orderItems totalPrice status createdAt isPaid isDelivered couponApplied"
+    )
     .lean();
 };
 
-/* ---------------------------- Model ------------------------------ */
+/**
+ * Find order by idempotency key
+ */
+orderSchema.statics.findByIdempotencyKey = function (key) {
+  if (!key) return null;
+  return this.findOne({ idempotencyKey: key });
+};
+
+/**
+ * Create order with idempotency check
+ */
+orderSchema.statics.createWithIdempotency = async function (orderData, session = null) {
+  if (orderData.idempotencyKey) {
+    const existing = await this.findByIdempotencyKey(orderData.idempotencyKey);
+    if (existing) {
+      return { order: existing, created: false };
+    }
+  }
+
+  const saveOptions = session ? { session } : {};
+  const order = new this(orderData);
+  await order.save(saveOptions);
+
+  return { order, created: true };
+};
+
 const Order = mongoose.model("Order", orderSchema);
 export default Order;

@@ -1,4 +1,4 @@
-// server/controllers/cartController.js
+// File: server/controllers/cartController.js
 
 import mongoose from "mongoose";
 import Cart from "../models/Cart.js";
@@ -8,372 +8,516 @@ import AppError from "../utils/appError.js";
 import asyncHandler from "express-async-handler";
 import { logger } from "../middleware/logger.js";
 
-/**
- * Constants for quantity validation
- */
-const MIN_Q = 1;
-const MAX_Q = 10;
+// Configuration
+const CART_CONFIG = {
+  MIN_QUANTITY: 1,
+  MAX_QUANTITY: 10,
+};
 
-/**
- * Helper: Validate quantity
- */
-function validateQuantity(q) {
-  if (typeof q !== "number" || Number.isNaN(q)) {
-    throw new AppError("Quantity must be a number", 400);
-  }
-  if (q < MIN_Q || q > MAX_Q) {
-    throw new AppError(`Quantity must be between ${MIN_Q} and ${MAX_Q}`, 400);
-  }
+/* ----------------------- Helper Functions ----------------------- */
+
+function normalizeObjectId(value) {
+  if (!value) return null;
+  let id = value;
+  if (typeof value === "object" && value._id) id = value._id;
+  const str = String(id);
+  if (!mongoose.Types.ObjectId.isValid(str)) return null;
+  return str;
 }
 
-/**
- * Helper: Get cart document for a user, optionally creating it
- */
-async function getCartDocument(userId, { createIfMissing = false } = {}) {
-  let cart = await Cart.findOne({ user: userId })
-    .populate("items.product", "name finalPrice image stock")
-    .populate("coupon", "code discountType discountValue minPurchase maxDiscount");
+function validateQuantity(quantity, fieldName = "quantity") {
+  const qty = Number(quantity);
+  if (!Number.isFinite(qty)) {
+    throw new AppError(`${fieldName} must be a valid number`, 400);
+  }
+  if (!Number.isInteger(qty)) {
+    throw new AppError(`${fieldName} must be an integer`, 400);
+  }
+  if (qty < CART_CONFIG.MIN_QUANTITY || qty > CART_CONFIG.MAX_QUANTITY) {
+    throw new AppError(
+      `${fieldName} must be between ${CART_CONFIG.MIN_QUANTITY} and ${CART_CONFIG.MAX_QUANTITY}`,
+      400
+    );
+  }
+  return qty;
+}
 
-  if (!cart && createIfMissing) {
-    cart = await Cart.create({ user: userId, items: [] });
-    cart = await Cart.findById(cart._id)
-      .populate("items.product", "name finalPrice image stock");
+async function getOrCreateCart(userId, session = null) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+    throw new AppError("Valid user ID is required", 400);
+  }
+
+  const options = session ? { session } : {};
+
+  let cart = await Cart.findOne({ user: userId }, null, options)
+    .populate("items.product", "name finalPrice image stock")
+    .populate("coupon", "code discountType discountValue minPurchase maxDiscount validFrom validTo isActive usageLimit timesUsed applicableProducts excludedProducts");
+
+  if (!cart) {
+    cart = new Cart({ user: userId, items: [] });
+    await cart.save(options);
+    
+    // After creating a new cart, we need to refetch it with population
+    cart = await Cart.findById(cart._id, null, options)
+      .populate("items.product", "name finalPrice image stock")
+      .populate("coupon", "code discountType discountValue minPurchase maxDiscount validFrom validTo isActive usageLimit timesUsed applicableProducts excludedProducts");
+  }
+
+  if (String(cart.user) !== String(userId)) {
+    throw new AppError("Unauthorized access to cart", 403);
   }
 
   return cart;
 }
 
 /**
- * Helper: Compute cart totals (price, discount, totalAfterDiscount)
+ * Compute totals for cart (preview only, no DB updates)
  */
-function computeTotals(cart) {
-  if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
-    return { totalPrice: 0, discount: 0, totalAfterDiscount: 0 };
+function computeCartTotals(cart) {
+  if (!cart) {
+    throw new AppError("Cart is required for total calculation", 500);
   }
 
-  // Total price using populated product data
-  const totalPrice = cart.items.reduce((acc, item) => {
-    const product = item.product;
-    const price = product && typeof product.finalPrice === "number" ? product.finalPrice : 0;
-    return acc + price * item.quantity;
-  }, 0);
+  const items = [];
+  let subtotal = 0;
+  const warnings = [];
+
+  for (const cartItem of cart.items) {
+    const product = cartItem.product;
+    const qty = Number(cartItem.quantity) || 0;
+
+    if (!product) {
+      warnings.push({
+        type: "product",
+        productId: String(cartItem.product),
+        message: "Product no longer available",
+      });
+      continue;
+    }
+
+    const unitPrice = Number(product.finalPrice || 0);
+    const lineTotal = unitPrice * qty;
+
+    items.push({
+      product: {
+        _id: normalizeObjectId(product._id),
+        name: product.name,
+        image: product.image,
+      },
+      quantity: qty,
+      unitPrice,
+      lineTotal,
+      availableStock: product.stock,
+    });
+
+    subtotal += lineTotal;
+
+    if (product.stock != null && product.stock < qty) {
+      warnings.push({
+        type: "stock",
+        productId: String(product._id),
+        message: `Only ${product.stock} units available`,
+        requestedQty: qty,
+        availableQty: product.stock,
+      });
+    }
+  }
 
   let discount = 0;
-  const coupon = cart.coupon;
+  let couponSummary = null;
+  let couponError = null;
 
-  if (coupon && coupon.discountType && coupon.discountValue != null) {
-    if (coupon.discountType === "percentage") {
-      discount = totalPrice * (coupon.discountValue / 100);
-      // Apply maxDiscount if provided
-      if (typeof coupon.maxDiscount === "number") {
-        discount = Math.min(discount, coupon.maxDiscount);
-      }
+  if (cart.coupon) {
+    const coupon = cart.coupon;
+    const now = new Date();
+    const basicValidity = coupon.isCurrentlyValid(now);
+
+    if (!basicValidity.valid) {
+      couponError = basicValidity.reason;
+    } else if (coupon.minPurchase && subtotal < coupon.minPurchase) {
+      couponError = `Minimum order amount for this coupon is ${coupon.minPurchase.toFixed(
+        2
+      )}`;
     } else {
-      // fixed discount but respect maxDiscount if defined
-      discount = coupon.discountValue;
-      if (typeof coupon.maxDiscount === "number") {
-        discount = Math.min(discount, coupon.maxDiscount);
-      }
-    }
+      // product-level applicability
+      const productIds = items.map((it) => it.product._id);
+      const applicability = coupon.isApplicableToProducts(productIds);
 
-    if (coupon.minPurchase && totalPrice < coupon.minPurchase) {
-      discount = 0; // coupon not applicable
+      if (!applicability.valid) {
+        couponError = applicability.reason;
+      } else {
+        discount = coupon.computeDiscount(subtotal);
+        couponSummary = {
+          code: coupon.code,
+          discountType: coupon.discountType,
+          discountValue: coupon.discountValue,
+          discountAmount: discount,
+        };
+      }
     }
   }
 
-  const totalAfterDiscount = Math.max(totalPrice - discount, 0);
-  return { totalPrice, discount, totalAfterDiscount };
+  const finalPrice = Math.max(0, subtotal - discount);
+
+  return {
+    items,
+    subtotal: Number(subtotal.toFixed(2)),
+    discount: Number(discount.toFixed(2)),
+    finalPrice: Number(finalPrice.toFixed(2)),
+    coupon: couponSummary,
+    couponError,
+    warnings: warnings.length ? warnings : undefined,
+  };
 }
 
+/* ----------------------- Controllers ----------------------- */
+
 /**
- * @desc    Get current user's cart
- * @route   GET /api/cart
- * @access  Private
+ * GET /api/cart
+ * Get current user's cart with totals
  */
 export const getCart = asyncHandler(async (req, res) => {
-  logger.info("Fetch cart start", { userId: req.user.id, route: req.originalUrl });
+  logger.info("Get cart", { userId: req.user._id });
 
-  const cart = await getCartDocument(req.user.id, { createIfMissing: false });
+  const cart = await getOrCreateCart(req.user._id);
 
-  if (!cart) {
-    logger.info("No cart found, returning empty", { userId: req.user.id });
-    return res.status(200).json({
-      success: true,
-      data: { items: [], totalPrice: 0, discount: 0, totalAfterDiscount: 0 },
-    });
-  }
-
-  const totals = computeTotals(cart);
+  const totals = computeCartTotals(cart);
 
   res.status(200).json({
     success: true,
     data: {
-      items: cart.items,
-      coupon: cart.coupon || null,
-      totalPrice: totals.totalPrice,
-      discount: totals.discount,
-      totalAfterDiscount: totals.totalAfterDiscount,
+      cart,
+      totals,
     },
   });
-
-  logger.info("Fetched cart", {
-    userId: req.user.id,
-    itemsCount: cart.items.length,
-    ...totals,
-  });
 });
 
 /**
- * @desc    Add an item to cart
- * @route   POST /api/cart
- * @access  Private
+ * POST /api/cart
+ * Add product to cart or increment quantity
+ * body: { productId, quantity }
  */
-export const addToCart = asyncHandler(async (req, res, next) => {
-  const { productId, quantity = 1 } = req.body;
+export const addToCart = asyncHandler(async (req, res) => {
+  logger.info("Add to cart", { userId: req.user._id });
 
-  logger.info("Add to cart start", { userId: req.user.id, productId, quantity });
-
-  if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
-    logger.error("Invalid productId", { userId: req.user.id, productId });
-    return next(new AppError("Invalid productId", 400));
+  const rawProductId = req.body.productId || req.body.product;
+  const productId = normalizeObjectId(rawProductId);
+  if (!productId) {
+    throw new AppError("Valid product ID is required", 400);
   }
 
-  validateQuantity(Number(quantity));
+  const quantity = validateQuantity(req.body.quantity ?? 1);
 
-  const product = await Product.findById(productId).select("stock name");
-  if (!product) {
-    logger.error("Product not found", { productId });
-    return next(new AppError("No product found with that ID", 404));
-  }
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  if (product.stock < quantity) {
-    logger.error("Insufficient stock", { productId, stock: product.stock });
-    return next(new AppError(`Not enough stock available. Only ${product.stock} left.`, 400));
-  }
+  try {
+    const product = await Product.findById(productId)
+      .select("name finalPrice image stock")
+      .session(session);
 
-  let cart = await getCartDocument(req.user.id, { createIfMissing: true });
-
-  const itemIndex = cart.items.findIndex(
-    (item) => item.product._id?.toString() === productId || item.product.toString() === productId
-  );
-
-  if (itemIndex > -1) {
-    const newQuantity = cart.items[itemIndex].quantity + Number(quantity);
-    if (newQuantity > MAX_Q) {
-      logger.error("Max quantity exceeded", { userId: req.user.id, productId });
-      return next(new AppError(`Maximum quantity per product is ${MAX_Q}`, 400));
+    if (!product) {
+      throw new AppError("Product not found", 404);
     }
-    cart.items[itemIndex].quantity = newQuantity;
-  } else {
-    cart.items.push({ product: productId, quantity: Number(quantity) });
-  }
 
-  await cart.save();
+    if (product.stock != null && product.stock < quantity) {
+      throw new AppError("Requested quantity exceeds available stock", 400);
+    }
 
-  const populatedCart = await Cart.findById(cart._id)
-    .populate("items.product", "name finalPrice image stock");
+    const cart = await getOrCreateCart(req.user._id, session);
 
-  logger.info("Added to cart successfully", { userId: req.user.id, productId, quantity });
-
-  res.status(200).json({ success: true, data: populatedCart });
-});
-
-/**
- * @desc    Merge guest cart with logged-in user's cart
- * @route   POST /api/cart/merge
- * @access  Private
- */
-export const mergeCart = asyncHandler(async (req, res, next) => {
-  const { guestCartItems } = req.body;
-  const userId = req.user.id;
-
-  logger.info("Merge cart start", { userId, guestItemCount: guestCartItems?.length || 0 });
-
-  if (!Array.isArray(guestCartItems)) {
-    logger.error("Invalid guestCartItems payload", { userId });
-    return next(new AppError("guestCartItems must be an array", 400));
-  }
-
-  let cart = await getCartDocument(userId, { createIfMissing: true });
-
-  for (const guestItem of guestCartItems) {
-    const { product, quantity } = guestItem;
-    if (!product || !mongoose.Types.ObjectId.isValid(product)) continue;
-    if (typeof quantity !== "number" || quantity <= 0) continue;
-
-    const productDoc = await Product.findById(product).select("stock");
-    if (!productDoc) continue;
-
-    const existingIndex = cart.items.findIndex(
-      (item) => item.product._id?.toString() === product || item.product.toString() === product
+    let existing = cart.items.find(
+      (item) => normalizeObjectId(item.product) === productId
     );
 
-    if (existingIndex > -1) {
-      const newQuantity = Math.min(
-        cart.items[existingIndex].quantity + quantity,
-        Math.min(productDoc.stock, MAX_Q)
-      );
-      cart.items[existingIndex].quantity = newQuantity;
+    if (!existing) {
+      cart.items.push({
+        product: product._id,
+        quantity,
+      });
     } else {
-      cart.items.push({ product, quantity: Math.min(quantity, Math.min(productDoc.stock, MAX_Q)) });
+      const newQty = existing.quantity + quantity;
+      existing.quantity = Math.min(CART_CONFIG.MAX_QUANTITY, newQty);
     }
+
+    await cart.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    // Re-load with population for response
+    const populatedCart = await getOrCreateCart(req.user._id);
+    const totals = computeCartTotals(populatedCart);
+
+    res.status(200).json({
+      success: true,
+      message: "Product added to cart",
+      data: {
+        cart: populatedCart,
+        totals,
+      },
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
   }
-
-  await cart.save();
-
-  const populatedCart = await Cart.findById(cart._id)
-    .populate("items.product", "name finalPrice image stock");
-
-  const totals = computeTotals(populatedCart);
-
-  logger.info("Merged guest cart successfully", { userId, mergedCount: guestCartItems.length });
-
-  res.status(200).json({
-    success: true,
-    message: "Guest cart merged successfully",
-    data: {
-      items: populatedCart.items,
-      totalPrice: totals.totalPrice,
-      discount: totals.discount,
-      totalAfterDiscount: totals.totalAfterDiscount,
-    },
-  });
 });
 
 /**
- * @desc    Remove an item from cart
- * @route   DELETE /api/cart/:productId
- * @access  Private
+ * PATCH /api/cart/:productId
+ * Update cart item quantity
+ * body: { quantity }
  */
-export const removeFromCart = asyncHandler(async (req, res, next) => {
-  const productId = req.params.productId;
-  logger.info("Remove from cart start", { userId: req.user.id, productId });
+export const updateCartItem = asyncHandler(async (req, res) => {
+  logger.info("Update cart item", { userId: req.user._id });
 
-  if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
-    logger.error("Invalid productId", { productId });
-    return next(new AppError("Invalid productId", 400));
+  const rawProductId = req.params.productId || req.body.productId || req.body.product;
+  const productId = normalizeObjectId(rawProductId);
+  if (!productId) {
+    throw new AppError("Valid product ID is required", 400);
   }
 
-  const cart = await getCartDocument(req.user.id);
-  if (!cart) return next(new AppError("No cart found for this user", 404));
+  const quantity = validateQuantity(req.body.quantity);
 
-  const itemIndex = cart.items.findIndex(
-    (item) => item.product._id?.toString() === productId || item.product.toString() === productId
-  );
-  if (itemIndex === -1) return next(new AppError("Product not found in cart", 404));
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  cart.items.splice(itemIndex, 1);
-  await cart.save();
+  try {
+    const cart = await getOrCreateCart(req.user._id, session);
 
-  const populatedCart = await Cart.findById(cart._id)
-    .populate("items.product", "name finalPrice image stock");
+    const item = cart.items.find(
+      (it) => normalizeObjectId(it.product) === productId
+    );
 
-  logger.info("Removed item from cart", { userId: req.user.id, productId });
+    if (!item) {
+      throw new AppError("Product not found in cart", 404);
+    }
 
-  res.status(200).json({ success: true, data: populatedCart });
+    item.quantity = quantity;
+
+    await cart.save({ session });
+    await session.commitTransaction();
+    session.endSession();
+
+    const populatedCart = await getOrCreateCart(req.user._id);
+    const totals = computeCartTotals(populatedCart);
+
+    res.status(200).json({
+      success: true,
+      message: "Cart item updated",
+      data: {
+        cart: populatedCart,
+        totals,
+      },
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
+  }
 });
 
 /**
- * @desc    Update quantity of an item in cart
- * @route   PATCH /api/cart/:productId
- * @access  Private
+ * DELETE /api/cart/:productId
+ * Remove item from cart
  */
-export const updateCartItem = asyncHandler(async (req, res, next) => {
-  const productId = req.params.productId;
-  const { quantity } = req.body;
+export const removeFromCart = asyncHandler(async (req, res) => {
+  logger.info("Remove from cart", { userId: req.user._id });
 
-  logger.info("Update cart item start", { userId: req.user.id, productId, quantity });
-
-  if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
-    logger.error("Invalid productId", { productId });
-    return next(new AppError("Invalid productId", 400));
+  const rawProductId = req.params.productId || req.body.productId || req.body.product;
+  const productId = normalizeObjectId(rawProductId);
+  if (!productId) {
+    throw new AppError("Valid product ID is required", 400);
   }
 
-  validateQuantity(Number(quantity));
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  const cart = await getCartDocument(req.user.id);
-  if (!cart) return next(new AppError("No cart found for this user", 404));
+  try {
+    const cart = await getOrCreateCart(req.user._id, session);
 
-  const itemIndex = cart.items.findIndex(
-    (item) => item.product._id?.toString() === productId || item.product.toString() === productId
-  );
-  if (itemIndex === -1) return next(new AppError("Product not found in cart", 404));
+    const originalLength = cart.items.length;
+    cart.items = cart.items.filter(
+      (it) => normalizeObjectId(it.product) !== productId
+    );
 
-  const product = await Product.findById(productId).select("stock");
-  if (!product) return next(new AppError("Product not found", 404));
-  if (product.stock < quantity) {
-    return next(new AppError(`Not enough stock. Only ${product.stock} left.`, 400));
+    if (cart.items.length === originalLength) {
+      throw new AppError("Product not found in cart", 404);
+    }
+
+    await cart.save({ session });
+    await session.commitTransaction();
+    session.endSession();
+
+    const populatedCart = await getOrCreateCart(req.user._id);
+    const totals = computeCartTotals(populatedCart);
+
+    res.status(200).json({
+      success: true,
+      message: "Product removed from cart",
+      data: {
+        cart: populatedCart,
+        totals,
+      },
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
   }
-
-  cart.items[itemIndex].quantity = Number(quantity);
-  await cart.save();
-
-  const populatedCart = await Cart.findById(cart._id)
-    .populate("items.product", "name finalPrice image stock");
-
-  logger.info("Updated cart item successfully", { userId: req.user.id, productId, quantity });
-
-  res.status(200).json({ success: true, data: populatedCart });
 });
 
 /**
- * @desc    Apply coupon to cart
- * @route   POST /api/cart/coupon
- * @access  Private
- */
-export const applyCoupon = asyncHandler(async (req, res, next) => {
-  const couponCode = (req.body?.couponCode || req.body?.code || "").trim().toUpperCase();
-  logger.info("Apply coupon start", { userId: req.user.id, couponCode });
-
-  if (!couponCode) {
-    logger.error("Coupon code missing", { userId: req.user.id });
-    return next(new AppError("Coupon code is required", 400));
-  }
-
-  const coupon = await Coupon.isValidCoupon(couponCode);
-  if (!coupon) return next(new AppError("Invalid or expired coupon", 400));
-
-  const cart = await getCartDocument(req.user.id);
-  if (!cart) return next(new AppError("No cart found for this user", 404));
-
-  cart.coupon = coupon._id;
-  await cart.save();
-
-  logger.info("Applied coupon successfully", { userId: req.user.id, couponId: coupon._id });
-
-  res.status(200).json({ success: true, message: "Coupon applied successfully" });
-});
-
-/**
- * @desc    Remove coupon from cart
- * @route   DELETE /api/cart/coupon
- * @access  Private
- */
-export const removeCoupon = asyncHandler(async (req, res, next) => {
-  logger.info("Remove coupon start", { userId: req.user.id });
-
-  const cart = await getCartDocument(req.user.id);
-  if (!cart) return next(new AppError("No cart found for this user", 404));
-
-  cart.coupon = undefined;
-  await cart.save();
-
-  logger.info("Removed coupon successfully", { userId: req.user.id });
-
-  res.status(200).json({ success: true, message: "Coupon removed successfully" });
-});
-
-/**
- * @desc    Clear entire cart
- * @route   DELETE /api/cart
- * @access  Private
+ * DELETE /api/cart
+ * Clear entire cart
  */
 export const clearCart = asyncHandler(async (req, res) => {
-  logger.info("Clear cart start", { userId: req.user.id });
+  logger.info("Clear cart", { userId: req.user._id });
 
-  await Cart.findOneAndDelete({ user: req.user.id });
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  logger.info("Cleared cart successfully", { userId: req.user.id });
+  try {
+    const cart = await getOrCreateCart(req.user._id, session);
 
-  res.status(200).json({ success: true, data: { items: [], totalPrice: 0 } });
+    cart.items = [];
+    cart.coupon = null;
+
+    await cart.save({ session });
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(200).json({
+      success: true,
+      message: "Cart cleared",
+      data: {
+        cart,
+        totals: {
+          items: [],
+          subtotal: 0,
+          discount: 0,
+          finalPrice: 0,
+          coupon: null,
+        },
+      },
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
+  }
+});
+
+/**
+ * POST /api/cart/coupon
+ * Apply coupon to cart (preview only; final validation at checkout)
+ * body: { code }
+ */
+export const applyCoupon = asyncHandler(async (req, res) => {
+  const rawCode = req.body.code || req.body.couponCode;
+  if (!rawCode || typeof rawCode !== "string") {
+    throw new AppError("Coupon code is required", 400);
+  }
+
+  const code = rawCode.trim().toUpperCase();
+
+  logger.info("Apply coupon to cart", { userId: req.user._id, code });
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const cart = await getOrCreateCart(req.user._id, session);
+
+    if (!cart.items.length) {
+      throw new AppError("Cart is empty. Add items before applying a coupon.", 400);
+    }
+
+    const coupon = await Coupon.findActiveByCode(code);
+    if (!coupon) {
+      throw new AppError("Coupon is invalid or expired", 400);
+    }
+
+    // Preview totals with this coupon (minPurchase/product restrictions)
+    await cart
+      .populate("items.product", "name finalPrice image stock")
+      .execPopulate?.();
+
+    // manual ensure populate in older mongoose
+    const populatedCart = await Cart.findById(cart._id)
+      .populate("items.product", "name finalPrice image stock")
+      .session(session);
+
+    const tempCart = populatedCart || cart;
+    tempCart.coupon = coupon; // attach doc temporarily in memory
+    const totals = computeCartTotals(tempCart);
+
+    if (totals.couponError) {
+      throw new AppError(`Coupon cannot be applied: ${totals.couponError}`, 400);
+    }
+
+    // If all good, save coupon reference (not a snapshot)
+    cart.coupon = coupon._id;
+    await cart.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    // Reload for response with populated coupon
+    const finalCart = await getOrCreateCart(req.user._id);
+    const finalTotals = computeCartTotals(finalCart);
+
+    res.status(200).json({
+      success: true,
+      message: "Coupon applied to cart",
+      data: {
+        cart: finalCart,
+        totals: finalTotals,
+      },
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
+  }
+});
+
+/**
+ * DELETE /api/cart/coupon
+ * Remove coupon from cart
+ */
+export const removeCoupon = asyncHandler(async (req, res) => {
+  logger.info("Remove coupon from cart", { userId: req.user._id });
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const cart = await getOrCreateCart(req.user._id, session);
+
+    // Simply remove the coupon without any product ID validation
+    cart.coupon = null;
+    await cart.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    // Reload for response
+    const finalCart = await getOrCreateCart(req.user._id);
+    const totals = computeCartTotals(finalCart);
+
+    res.status(200).json({
+      success: true,
+      message: "Coupon removed from cart",
+      data: {
+        cart: finalCart,
+        totals,
+      },
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
+  }
 });
