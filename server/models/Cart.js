@@ -45,10 +45,6 @@ const cartItemSchema = new mongoose.Schema(
 
 /**
  * Schema for the shopping cart
- *
- * NOTE:
- * - No price snapshots here; prices are always resolved from Product at read/checkout time.
- * - No couponSnapshot; only a reference to Coupon. Final coupon validation happens at checkout.
  */
 const cartSchema = new mongoose.Schema(
   {

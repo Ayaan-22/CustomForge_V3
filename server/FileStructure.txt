@@ -2,7 +2,6 @@
 │
 ├── /config
 │   ├── db.js                # Database connection setup
-│   ├── config.env           # Environment variables
 │   └── rateLimit.js         # Rate limiting configurations
 │
 ├── /controllers
@@ -12,12 +11,11 @@
 │   ├── paymentController.js # Payment handling
 │   ├── productController.js # Product management
 │   ├── userController.js    # User management
-│   ├── couponController.js  # Coupon management
+│   ├── logController.js     # Log management
 │   └── adminController.js   # Admin-specific operations
 │
 ├── /middleware
 │   ├── authMiddleware.js    # Authentication checks
-│   ├── adminMiddleware.js   # Admin role verification
 │   ├── errorMiddleware.js   # Error handling
 │   └── logger.js            # Custom logging system
 │
@@ -28,6 +26,7 @@
 │   ├── Coupon.js           # Coupon schema
 │   ├── Game.js             # Game schema
 │   ├── Order.js            # Order schema
+|   ├── PrebuiltPc.js       # Pre built Pc schema
 │   └── Review.js           # Review schema
 │
 ├── /routes
@@ -37,7 +36,6 @@
 │   ├── adminRoutes.js      # Admin API routes
 │   ├── cartRoutes.js       # Cart API routes
 │   ├── orderRoutes.js      # Order API routes
-│   ├── couponRoutes.js     # Coupon API routes
 │   └── paymentRoutes.js    # Payment API routes
 │
 ├── /utils
