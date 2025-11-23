@@ -56,6 +56,8 @@ import {
 // Rate limiters (centralized config)
 import { adminLimiter, logRateLimiter } from "../config/rateLimit.js";
 
+import upload from "../middleware/upload.js";
+
 const router = express.Router();
 
 /* ============================================================================
@@ -93,11 +95,11 @@ router
    PRODUCT MANAGEMENT ROUTES
    ========================================================================== */
 router.get("/products", getAllProducts);
-router.post("/products", createProduct);
+router.post("/products", upload.array("images", 10), createProduct);
 
 router
   .route("/products/:id")
-  .patch(updateProduct)
+  .patch(upload.array("images", 10), updateProduct)
   .delete(deleteProduct);
 
 router
