@@ -17,6 +17,7 @@
 ├── /middleware
 │   ├── authMiddleware.js    # Authentication checks
 │   ├── errorMiddleware.js   # Error handling
+│   ├── upload.js            # Image upload handling
 │   └── logger.js            # Custom logging system
 │
 ├── /models
@@ -42,6 +43,7 @@
 │   ├── apiFeatures.js      # Advanced query features
 │   ├── email.js            # Email service
 │   ├── generateToken.js    # JWT handling
+|   ├── cloudinary.js
 │   └── appError.js         # Custom error class
 │
 ├── /public
@@ -64,4 +66,5 @@
 ├── .env                  # Local environment variables
 ├── .gitignore
 ├── package.json
+├── package-lock.json
 └── server.js             # Main application entry point
