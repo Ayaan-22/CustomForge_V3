@@ -46,7 +46,6 @@ const productSchema = new mongoose.Schema(
         "GamingDesk", "SoundCard", "Cables", "GamingLaptop", "Games", 
         "PCGames", "ConsoleGames", "VRGames",
       ],
-      immutable: true,
     },
     brand: {
       type: String,

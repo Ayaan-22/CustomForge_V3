@@ -19,7 +19,7 @@
     "express",
     "mongodb"
   ],
-  "author": "Your Name",
+  "author": "Ayaan Irfan",
   "license": "MIT",
   "dependencies": {
     "bcryptjs": "^2.4.3",
